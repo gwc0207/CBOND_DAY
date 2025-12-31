@@ -1,0 +1,11 @@
+{
+  "start": "2023-01-01",
+  "end": "2023-12-31",
+  "target_count": 50,
+  "min_count": 30,
+  "max_weight": 0.05,
+  "buy_twap_col": "twap_0930_1000",
+  "sell_twap_col": "twap_1430_1500",
+  "twap_bps": 1,
+  "factor_col": "intraday_momentum"
+}

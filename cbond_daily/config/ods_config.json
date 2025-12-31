@@ -1,0 +1,13 @@
+{
+  "sync_tables": [
+    "market_cbond.daily_price",
+    "market_cbond.daily_twap",
+    "market_cbond.daily_vwap",
+    "market_cbond.daily_deriv",
+    "market_cbond.daily_base",
+    "market_cbond.daily_rating",
+    "metadata.cbond_info",
+    "metadata.trading_calendar"
+  ],
+  "overwrite": false
+}
