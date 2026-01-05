@@ -8,6 +8,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from cbond_daily.run.common import load_config_file, parse_date
+from cbond_daily.run.plotting import save_nav_plot
 from cbond_daily.backtest.runner import run_backtest
 
 
@@ -33,6 +34,17 @@ def main() -> None:
         twap_bps=float(bt_cfg["twap_bps"]),
     )
     print(result)
+    logs_root = paths_cfg.get("logs")
+    if logs_root and result.daily_returns is not None:
+        out_dir = Path(logs_root) / "backtest"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        result.daily_returns.to_csv(out_dir / "daily_returns.csv", index=False)
+        result.nav_curve.to_csv(out_dir / "nav_curve.csv", index=False)
+        if result.benchmark_curve is not None:
+            result.benchmark_curve.to_csv(out_dir / "benchmark_nav.csv", index=False)
+        result.positions.to_csv(out_dir / "positions.csv", index=False)
+        save_nav_plot(result.nav_curve, out_dir / "nav_curve.png", benchmark=result.benchmark_curve)
+        print(f"saved: {out_dir}")
 
 
 if __name__ == "__main__":

@@ -12,6 +12,10 @@ from .execution import apply_twap_bps
 @dataclass
 class BacktestResult:
     days: int = 0
+    daily_returns: pd.DataFrame | None = None
+    nav_curve: pd.DataFrame | None = None
+    benchmark_curve: pd.DataFrame | None = None
+    positions: pd.DataFrame | None = None
 
 
 def run_backtest(
@@ -29,6 +33,8 @@ def run_backtest(
     twap_bps: float,
 ) -> BacktestResult:
     result = BacktestResult()
+    daily_records: list[dict] = []
+    position_records: list[dict] = []
     for day in pd.date_range(start, end, freq="D"):
         df = read_dwd_daily(dwd_root, day.date())
         if df.empty:
@@ -43,12 +49,64 @@ def run_backtest(
         merged = df.merge(factors, on=["trade_date", "code"], how="left")
         if factor_col not in merged.columns:
             continue
+        missing_cols = [c for c in (buy_twap_col, sell_twap_col) if c not in merged.columns]
+        if missing_cols:
+            raise KeyError(f"missing price columns: {missing_cols}")
+        tradable = merged[
+            merged[buy_twap_col].notna()
+            & merged[sell_twap_col].notna()
+            & (merged[buy_twap_col] > 0)
+            & (merged[sell_twap_col] > 0)
+        ]
+        if tradable.empty:
+            continue
         ranked = merged.sort_values(factor_col, ascending=False)
         picks = ranked.head(target_count)
         if len(picks) < min_count:
             continue
         buy_px = apply_twap_bps(picks[buy_twap_col], twap_bps, side="buy")
         sell_px = apply_twap_bps(picks[sell_twap_col], twap_bps, side="sell")
-        _ = buy_px, sell_px, max_weight
+        returns = (sell_px - buy_px) / buy_px
+        weight = min(1.0 / len(picks), max_weight)
+        day_return = float((returns * weight).sum())
+        total_weight = float(weight * len(picks))
+        bench_buy = apply_twap_bps(tradable[buy_twap_col], twap_bps, side="buy")
+        bench_sell = apply_twap_bps(tradable[sell_twap_col], twap_bps, side="sell")
+        bench_returns = (bench_sell - bench_buy) / bench_buy
+        bench_weight = 1.0 / len(tradable)
+        bench_day_return = float((bench_returns * bench_weight).sum())
+        daily_records.append(
+            {
+                "trade_date": day.date(),
+                "count": int(len(picks)),
+                "avg_return": float(returns.mean()),
+                "day_return": day_return,
+                "benchmark_count": int(len(tradable)),
+                "benchmark_return": bench_day_return,
+                "total_weight": total_weight,
+            }
+        )
+        for idx, row in picks.iterrows():
+            position_records.append(
+                {
+                    "trade_date": day.date(),
+                    "code": row["code"],
+                    "factor": float(row[factor_col]) if pd.notna(row[factor_col]) else None,
+                    "weight": weight,
+                    "buy_price": float(buy_px.loc[idx]),
+                    "sell_price": float(sell_px.loc[idx]),
+                    "return": float(returns.loc[idx]),
+                }
+            )
         result.days += 1
+    if daily_records:
+        daily_df = pd.DataFrame(daily_records).sort_values("trade_date")
+        nav = (1.0 + daily_df["day_return"]).cumprod()
+        nav_df = pd.DataFrame({"trade_date": daily_df["trade_date"], "nav": nav})
+        bench_nav = (1.0 + daily_df["benchmark_return"]).cumprod()
+        bench_df = pd.DataFrame({"trade_date": daily_df["trade_date"], "nav": bench_nav})
+        result.daily_returns = daily_df
+        result.nav_curve = nav_df
+        result.benchmark_curve = bench_df
+        result.positions = pd.DataFrame(position_records)
     return result
