@@ -1,5 +1,8 @@
 {
   "update_only": [],
   "overwrite": false,
-  "factors": []
+  "factors": [
+    { "name": "intraday_momentum" },
+    { "name": "liquidity" }
+  ]
 }

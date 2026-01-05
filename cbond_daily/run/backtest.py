@@ -21,6 +21,7 @@ def main() -> None:
 
     result = run_backtest(
         paths_cfg["dwd_root"],
+        paths_cfg["dws_root"],
         parse_date(bt_cfg["start"]),
         parse_date(bt_cfg["end"]),
         factor_col=factor_col,

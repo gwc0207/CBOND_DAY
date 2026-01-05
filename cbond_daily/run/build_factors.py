@@ -18,11 +18,13 @@ def main() -> None:
     bt_cfg = load_config_file("backtest")
 
     dwd_root = paths_cfg["dwd_root"]
+    dws_root = paths_cfg["dws_root"]
     start = parse_date(bt_cfg["start"])
     end = parse_date(bt_cfg["end"])
 
     run_factor_pipeline(
         dwd_root,
+        dws_root,
         start,
         end,
         factors_cfg.get("factors", []),

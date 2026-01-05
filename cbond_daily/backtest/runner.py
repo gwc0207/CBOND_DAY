@@ -5,7 +5,7 @@ from datetime import date
 
 import pandas as pd
 
-from cbond_daily.data.io import read_dwd_daily
+from cbond_daily.data.io import read_dwd_daily, read_dws_factors_daily
 from .execution import apply_twap_bps
 
 
@@ -16,6 +16,7 @@ class BacktestResult:
 
 def run_backtest(
     dwd_root: str,
+    dws_root: str,
     start: date,
     end: date,
     *,
@@ -30,9 +31,19 @@ def run_backtest(
     result = BacktestResult()
     for day in pd.date_range(start, end, freq="D"):
         df = read_dwd_daily(dwd_root, day.date())
-        if df.empty or factor_col not in df.columns:
+        if df.empty:
             continue
-        ranked = df.sort_values(factor_col, ascending=False)
+        factors = read_dws_factors_daily(dws_root, day.date())
+        if factors.empty:
+            continue
+        if "trade_date" not in factors.columns:
+            factors["trade_date"] = day.date()
+        if "trade_date" not in df.columns:
+            df["trade_date"] = day.date()
+        merged = df.merge(factors, on=["trade_date", "code"], how="left")
+        if factor_col not in merged.columns:
+            continue
+        ranked = merged.sort_values(factor_col, ascending=False)
         picks = ranked.head(target_count)
         if len(picks) < min_count:
             continue
