@@ -7,7 +7,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from cbond_daily.run.common import load_config_file, parse_date
+from cbond_daily.core.config import load_config_file, parse_date
 from cbond_daily.factors.pipeline import run_factor_pipeline
 from cbond_daily.factors import builtin  # noqa: F401
 

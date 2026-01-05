@@ -36,17 +36,19 @@ def run_backtest(
     daily_records: list[dict] = []
     position_records: list[dict] = []
     for day in pd.date_range(start, end, freq="D"):
+        factor_day = (day - pd.Timedelta(days=1)).date()
         df = read_dwd_daily(dwd_root, day.date())
         if df.empty:
             continue
-        factors = read_dws_factors_daily(dws_root, day.date())
+        factors = read_dws_factors_daily(dws_root, factor_day)
         if factors.empty:
             continue
-        if "trade_date" not in factors.columns:
-            factors["trade_date"] = day.date()
+        if "code" not in factors.columns:
+            raise KeyError("missing code column in factor data")
         if "trade_date" not in df.columns:
             df["trade_date"] = day.date()
-        merged = df.merge(factors, on=["trade_date", "code"], how="left")
+        factor_cols = [c for c in factors.columns if c != "trade_date"]
+        merged = df.merge(factors[factor_cols], on="code", how="left")
         if factor_col not in merged.columns:
             continue
         missing_cols = [c for c in (buy_twap_col, sell_twap_col) if c not in merged.columns]

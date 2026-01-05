@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -88,6 +88,45 @@ def read_dwd_daily(root: str | Path, day: date) -> pd.DataFrame:
     if not path.exists():
         return pd.DataFrame()
     return pd.read_parquet(path)
+
+
+def get_latest_table_date(root: str | Path, table: str) -> date | None:
+    base = _table_dir(root, table)
+    if not base.exists():
+        return None
+    latest: date | None = None
+    for path in base.glob("**/*.parquet"):
+        if path.name == "all.parquet":
+            continue
+        try:
+            day = datetime.strptime(path.stem, "%Y%m%d").date()
+        except ValueError:
+            continue
+        if latest is None or day > latest:
+            latest = day
+    return latest
+
+
+def table_has_data(root: str | Path, table: str) -> bool:
+    base = _table_dir(root, table)
+    if not base.exists():
+        return False
+    return any(base.glob("**/*.parquet"))
+
+
+def get_latest_dwd_date(root: str | Path) -> date | None:
+    base = Path(root) / "dwd_daily"
+    if not base.exists():
+        return None
+    latest: date | None = None
+    for path in base.glob("**/*.parquet"):
+        try:
+            day = datetime.strptime(path.stem, "%Y%m%d").date()
+        except ValueError:
+            continue
+        if latest is None or day > latest:
+            latest = day
+    return latest
 
 
 def write_dws_factors_by_date(

@@ -1,4 +1,5 @@
 {
+  "full_refresh": false,
   "sync_tables": [
     "market_cbond.daily_price",
     "market_cbond.daily_twap",
