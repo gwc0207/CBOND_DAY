@@ -15,6 +15,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from cbond_daily.backtest.execution import apply_twap_bps
 from cbond_daily.data.io import read_dwd_daily, read_dws_factors_daily
 from cbond_daily.core.config import load_config_file, parse_date
+from cbond_daily.core.naming import build_factor_col
 
 
 def _calc_daily_return(df: pd.DataFrame, buy_col: str, sell_col: str, bps: float) -> pd.Series:
@@ -29,28 +30,48 @@ def _rank_ic(x: pd.Series, y: pd.Series) -> float:
     return float(x_rank.corr(y_rank, method="pearson"))
 
 
-def run_factor_report() -> None:
-    paths_cfg = load_config_file("paths")
-    bt_cfg = load_config_file("backtest")
+def _latest_try_dir(base: Path) -> Path | None:
+    if not base.exists():
+        return None
+    latest: Path | None = None
+    max_idx = -1
+    for path in base.iterdir():
+        if not path.is_dir() or not path.name.startswith("Try_"):
+            continue
+        try:
+            idx = int(path.name.split("_", 1)[1])
+        except (IndexError, ValueError):
+            continue
+        if idx > max_idx:
+            max_idx = idx
+            latest = path
+    return latest
 
-    dwd_root = paths_cfg["dwd_root"]
-    dws_root = paths_cfg["dws_root"]
-    logs_root = paths_cfg.get("logs")
-    if not logs_root:
-        raise KeyError("missing logs in paths_config.json")
 
-    start = parse_date(bt_cfg["start"])
-    end = parse_date(bt_cfg["end"])
-    factor_col = bt_cfg.get("factor_col")
-    if not factor_col:
-        raise ValueError("backtest_config.json missing factor_col")
-    buy_col = bt_cfg["buy_twap_col"]
-    sell_col = bt_cfg["sell_twap_col"]
-    bps = float(bt_cfg["twap_bps"])
-    bins = int(bt_cfg.get("ic_bins", 20))
+def _params_to_str(params: dict) -> str:
+    if not params:
+        return "default"
+    parts = []
+    for key in sorted(params):
+        value = str(params[key]).replace(" ", "")
+        parts.append(value.replace("/", "_").replace("\\", "_").replace(":", "_"))
+    return "_".join(parts)
 
+
+def _render_report(
+    *,
+    dwd_root: str,
+    dws_root: str,
+    out_dir: Path,
+    start: date,
+    end: date,
+    factor_col: str,
+    buy_col: str,
+    sell_col: str,
+    bps: float,
+    bins: int,
+) -> None:
     ic_records: list[dict] = []
-    factor_values: list[float] = []
     bin_records: list[dict] = []
     bin_time_records: list[dict] = []
     daily_stats: list[dict] = []
@@ -135,7 +156,7 @@ def run_factor_report() -> None:
             )
 
     if not ic_records:
-        raise RuntimeError("no data to compute IC/IR; check factor and price data")
+        return
 
     ic_df = pd.DataFrame(ic_records).sort_values("trade_date")
     ic_df["ic_cum"] = ic_df["ic"].cumsum()
@@ -162,13 +183,12 @@ def run_factor_report() -> None:
     daily_stats_df = pd.DataFrame(daily_stats).sort_values("trade_date")
     zero_one_df = pd.DataFrame(zero_one_records).sort_values("trade_date")
 
-    daily_returns_path = Path(logs_root) / "backtest" / "daily_returns.csv"
+    daily_returns_path = out_dir / "daily_returns.csv"
     if daily_returns_path.exists():
         daily_returns_df = pd.read_csv(daily_returns_path, parse_dates=["trade_date"])
     else:
         daily_returns_df = pd.DataFrame()
 
-    out_dir = Path(logs_root) / "backtest"
     out_dir.mkdir(parents=True, exist_ok=True)
     ic_df.to_csv(out_dir / "ic_series.csv", index=False)
     bin_stats.to_csv(out_dir / "factor_bins.csv", index=False)
@@ -250,7 +270,72 @@ def run_factor_report() -> None:
     fig.tight_layout()
     fig.savefig(out_dir / "factor_report.png", dpi=150)
     plt.close(fig)
-    print(f"saved: {out_dir}")
+
+
+def run_factor_report() -> None:
+    paths_cfg = load_config_file("paths")
+    cfg = load_config_file("factor_batch")
+
+    dwd_root = paths_cfg["dwd_root"]
+    dws_root = paths_cfg["dws_root"]
+    logs_root = paths_cfg.get("logs")
+    if not logs_root:
+        raise KeyError("missing logs in paths_config.json")
+
+    start = parse_date(cfg["start"])
+    end = parse_date(cfg["end"])
+    buy_col = cfg["buy_twap_col"]
+    sell_col = cfg["sell_twap_col"]
+    bps = float(cfg["twap_bps"])
+    bins = int(cfg.get("ic_bins", 20))
+
+    factors = cfg.get("factors", [])
+    factor_meta: dict[str, dict] = {}
+    for item in factors:
+        col = build_factor_col(item["name"], item.get("params"))
+        factor_meta[col] = {
+            "name": item["name"],
+            "params": item.get("params", {}),
+            "params_str": _params_to_str(item.get("params", {})),
+        }
+
+    signals_cfg = cfg.get("signals", [])
+    if signals_cfg:
+        signals = []
+        for item in signals_cfg:
+            if "col" in item:
+                col = item["col"]
+            else:
+                col = build_factor_col(item["name"], item.get("params"))
+            signals.append((item.get("signal_id") or col, col))
+    else:
+        signals = [(col, col) for col in factor_meta]
+
+    date_dir = f"{start:%Y-%m-%d}_{end:%Y-%m-%d}"
+    batch_id = cfg.get("batch_id", "Signal_Factor")
+    base_dir = Path(logs_root) / date_dir / batch_id
+    try_dir = _latest_try_dir(base_dir)
+    if try_dir is None:
+        raise FileNotFoundError(f"missing batch output under {base_dir}")
+
+    for signal_id, col in signals:
+        meta = factor_meta.get(col, {})
+        factor_name = meta.get("name") or col
+        params_str = meta.get("params_str") or "default"
+        out_dir = try_dir / factor_name / params_str
+        _render_report(
+            dwd_root=dwd_root,
+            dws_root=dws_root,
+            out_dir=out_dir,
+            start=start,
+            end=end,
+            factor_col=col,
+            buy_col=buy_col,
+            sell_col=sell_col,
+            bps=bps,
+            bins=bins,
+        )
+    print(f"saved: {try_dir}")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,21 @@
+{
+  "start": "2025-01-01",
+  "end": "2025-12-31",
+  "target_count": 30,
+  "min_count": 20,
+  "max_weight": 0.05,
+  "buy_twap_col": "twap_0930_1000",
+  "sell_twap_col": "twap_1430_1500",
+  "twap_bps": 1,
+  "max_workers": 4,
+  "overwrite": false,
+  "factors": [
+    { "name": "intraday_momentum", "params": {} },
+    { "name": "liquidity", "params": {} }
+  ],
+  "signals": [
+    { "name": "intraday_momentum", "params": {} },
+    { "name": "liquidity", "params": {} }
+  ],
+  "batch_id": "Single_Factor"
+}

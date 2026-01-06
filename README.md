@@ -7,7 +7,7 @@
 1) 同步 ODS（数据读取略）：按配置增量拉取并落盘到 ODS。
 2) 构建 DWD：按日合并主表与扩展表，生成日级明细数据。
 3) 计算因子到 DWS：读取 DWD，计算因子后按日写入 DWS。
-4) 回测：读取 DWD 行情 + DWS 因子，执行单因子回测并输出结果。
+4) 实验回测：使用 `python -m cbond_daily.run.factor_batch` 批量回测并输出对比结果。
 5) 报表：输出 IC/IR、分箱统计、净值对比图等（`python -m cbond_daily.report.factor_report`）。
 
 一键流程：

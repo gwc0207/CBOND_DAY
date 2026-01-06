@@ -10,6 +10,7 @@ from cbond_daily.data.io import (
     read_dws_factors_daily,
     write_dws_factors_by_date,
 )
+from cbond_daily.core.naming import build_factor_col
 from .base import FactorRegistry
 
 
@@ -31,11 +32,12 @@ def run_factor_pipeline(
         new_cols: dict[str, pd.Series] = {}
         for item in factor_defs:
             name = item["name"]
-            if update_only and name not in update_only:
+            col_name = build_factor_col(name, item.get("params"))
+            if update_only and col_name not in update_only:
                 continue
             factor_cls = FactorRegistry.get(name)
             factor = factor_cls(**(item.get("params") or {}))
-            new_cols[name] = factor.compute(df)
+            new_cols[col_name] = factor.compute(df)
         if not new_cols:
             continue
         if "code" not in df.columns:
