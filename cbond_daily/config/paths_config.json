@@ -1,7 +1,7 @@
 {
-  "ods_root": "D:/cbond_daily/ods",
-  "dwd_root": "D:/cbond_daily/dwd",
-  "dws_root": "D:/cbond_daily/dws",
+  "ods_root": "D:/cbond_daily/raw_data",
+  "dwd_root": "D:/cbond_daily/clean_data",
+  "dws_root": "D:/cbond_daily/factor_data",
   "ads_root": "D:/cbond_daily/ads",
   "logs": "D:/cbond_daily/logs"
 }

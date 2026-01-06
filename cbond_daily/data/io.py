@@ -76,7 +76,7 @@ def write_dwd_by_date(
     for day, group in work.groupby(date_col):
         month = f"{day.year:04d}-{day.month:02d}"
         filename = f"{day.strftime('%Y%m%d')}.parquet"
-        path = Path(root) / "dwd_daily" / month / filename
+        path = Path(root) / month / filename
         path.parent.mkdir(parents=True, exist_ok=True)
         group.to_parquet(path, index=False)
 
@@ -84,7 +84,7 @@ def write_dwd_by_date(
 def read_dwd_daily(root: str | Path, day: date) -> pd.DataFrame:
     month = f"{day.year:04d}-{day.month:02d}"
     filename = f"{day.strftime('%Y%m%d')}.parquet"
-    path = Path(root) / "dwd_daily" / month / filename
+    path = Path(root) / month / filename
     if not path.exists():
         return pd.DataFrame()
     return pd.read_parquet(path)
@@ -115,7 +115,7 @@ def table_has_data(root: str | Path, table: str) -> bool:
 
 
 def get_latest_dwd_date(root: str | Path) -> date | None:
-    base = Path(root) / "dwd_daily"
+    base = Path(root)
     if not base.exists():
         return None
     latest: date | None = None
@@ -142,7 +142,7 @@ def write_dws_factors_by_date(
     for day, group in work.groupby(date_col):
         month = f"{day.year:04d}-{day.month:02d}"
         filename = f"{day.strftime('%Y%m%d')}.parquet"
-        path = Path(root) / "dws_factors" / month / filename
+        path = Path(root) / month / filename
         path.parent.mkdir(parents=True, exist_ok=True)
         group.to_parquet(path, index=False)
 
@@ -150,7 +150,7 @@ def write_dws_factors_by_date(
 def read_dws_factors_daily(root: str | Path, day: date) -> pd.DataFrame:
     month = f"{day.year:04d}-{day.month:02d}"
     filename = f"{day.strftime('%Y%m%d')}.parquet"
-    path = Path(root) / "dws_factors" / month / filename
+    path = Path(root) / month / filename
     if not path.exists():
         return pd.DataFrame()
     return pd.read_parquet(path)
