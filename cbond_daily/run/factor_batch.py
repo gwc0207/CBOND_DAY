@@ -39,9 +39,20 @@ def main() -> None:
                 col = item["col"]
             else:
                 col = build_factor_col(item["name"], item.get("params"))
-            signals.append(SignalSpec(signal_id=item.get("signal_id") or col, col=col))
+            bin_select = item.get("bin_select")
+            if not bin_select:
+                raise ValueError("each signal needs bin_select")
+            max_weight = float(exp_cfg.get("max_weight", 0.05))
+            signals.append(
+                SignalSpec(
+                    signal_id=item.get("signal_id") or col,
+                    col=col,
+                    bin_select=[int(x) for x in bin_select],
+                    max_weight=max_weight,
+                )
+            )
     else:
-        signals = [SignalSpec(signal_id=col, col=col) for col in factor_meta]
+        raise ValueError("factor_batch_config.json missing signals")
     if not signals:
         raise ValueError("factor_batch_config.json missing signals")
 
@@ -64,13 +75,12 @@ def main() -> None:
         buy_twap_col=exp_cfg["buy_twap_col"],
         sell_twap_col=exp_cfg["sell_twap_col"],
         twap_bps=float(exp_cfg["twap_bps"]),
-        target_count=int(exp_cfg["target_count"]),
         min_count=int(exp_cfg["min_count"]),
-        max_weight=float(exp_cfg["max_weight"]),
         signals=signals,
         factor_meta=factor_meta,
         batch_id=exp_cfg.get("batch_id", "Signal_Factor"),
         max_workers=int(exp_cfg.get("max_workers", 4)),
+        bin_count=int(exp_cfg.get("ic_bins", 20)),
     )
     run_factor_report()
 

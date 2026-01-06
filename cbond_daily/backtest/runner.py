@@ -27,10 +27,12 @@ def run_backtest(
     factor_col: str,
     buy_twap_col: str,
     sell_twap_col: str,
-    target_count: int,
     min_count: int,
     max_weight: float,
     twap_bps: float,
+    *,
+    bin_count: int | None = None,
+    bin_select: list[int] | None = None,
 ) -> BacktestResult:
     result = BacktestResult()
     daily_records: list[dict] = []
@@ -62,8 +64,20 @@ def run_backtest(
         ]
         if tradable.empty:
             continue
-        ranked = merged.sort_values(factor_col, ascending=False)
-        picks = ranked.head(target_count)
+        if bin_select is None:
+            raise ValueError("bin_select is required for bin-based selection")
+        if bin_count is None or bin_count <= 1:
+            raise ValueError("bin_count must be > 1 for bin-based selection")
+        try:
+            bins_cat = pd.qcut(
+                merged[factor_col],
+                bin_count,
+                labels=False,
+                duplicates="drop",
+            )
+        except ValueError:
+            continue
+        picks = merged[bins_cat.isin(bin_select)]
         if len(picks) < min_count:
             continue
         buy_px = apply_twap_bps(picks[buy_twap_col], twap_bps, side="buy")

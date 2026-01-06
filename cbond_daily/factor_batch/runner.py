@@ -18,6 +18,8 @@ from cbond_daily.backtest.runner import run_backtest
 class SignalSpec:
     signal_id: str
     col: str
+    bin_select: list[int]
+    max_weight: float
 
 
 def _safe_part(value: str) -> str:
@@ -88,13 +90,12 @@ def run_factor_batch(
     buy_twap_col: str,
     sell_twap_col: str,
     twap_bps: float,
-    target_count: int,
     min_count: int,
-    max_weight: float,
     signals: Iterable[SignalSpec],
     factor_meta: dict[str, dict],
     batch_id: str = "Signal_Factor",
     max_workers: int = 4,
+    bin_count: int | None = None,
 ) -> Path:
     date_dir = f"{start:%Y-%m-%d}_{end:%Y-%m-%d}"
     base_dir = Path(logs_root) / date_dir / batch_id
@@ -118,10 +119,11 @@ def run_factor_batch(
             factor_col=spec.col,
             buy_twap_col=buy_twap_col,
             sell_twap_col=sell_twap_col,
-            target_count=target_count,
             min_count=min_count,
-            max_weight=max_weight,
+            max_weight=spec.max_weight,
             twap_bps=twap_bps,
+            bin_count=bin_count,
+            bin_select=spec.bin_select,
         )
         _write_result(signal_dir, result)
         daily = result.daily_returns if result.daily_returns is not None else pd.DataFrame()
