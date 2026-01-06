@@ -30,6 +30,39 @@ def _rank_ic(x: pd.Series, y: pd.Series) -> float:
     return float(x_rank.corr(y_rank, method="pearson"))
 
 
+def _calc_turnover(positions: pd.DataFrame) -> float:
+    if positions.empty:
+        return 0.0
+    work = positions.copy()
+    work["trade_date"] = pd.to_datetime(work["trade_date"]).dt.date
+    turnover_vals: list[float] = []
+    prev = pd.Series(dtype=float)
+    for _, group in work.groupby("trade_date"):
+        weights = group.set_index("code")["weight"].astype(float)
+        all_codes = prev.index.union(weights.index)
+        diff = (weights.reindex(all_codes).fillna(0.0) - prev.reindex(all_codes).fillna(0.0)).abs()
+        turnover_vals.append(0.5 * float(diff.sum()))
+        prev = weights
+    if not turnover_vals:
+        return 0.0
+    return float(pd.Series(turnover_vals).mean())
+
+
+def _calc_performance_metrics(daily_returns: pd.DataFrame, nav_curve: pd.DataFrame) -> dict:
+    if daily_returns.empty or nav_curve.empty:
+        return {"sharpe": 0.0, "maxdd": 0.0, "win_rate": 0.0}
+    daily = daily_returns["day_return"].astype(float)
+    mean_ret = float(daily.mean())
+    vol = float(daily.std(ddof=0))
+    sharpe = float((mean_ret / vol) * (252.0**0.5)) if vol else 0.0
+    nav = nav_curve["nav"].astype(float)
+    running_max = nav.cummax()
+    drawdown = (nav / running_max) - 1.0
+    maxdd = float(drawdown.min()) if not drawdown.empty else 0.0
+    win_rate = float((daily > 0).mean())
+    return {"sharpe": sharpe, "maxdd": maxdd, "win_rate": win_rate}
+
+
 def _latest_try_dir(base: Path) -> Path | None:
     if not base.exists():
         return None
@@ -74,8 +107,6 @@ def _render_report(
     ic_records: list[dict] = []
     bin_records: list[dict] = []
     bin_time_records: list[dict] = []
-    daily_stats: list[dict] = []
-    zero_one_records: list[dict] = []
 
     for day in pd.date_range(start, end, freq="D"):
         factor_day = (day - timedelta(days=1)).date()
@@ -111,22 +142,6 @@ def _render_report(
             {"trade_date": day.date(), "ic": ic, "rank_ic": rank_ic, "count": len(tradable)}
         )
 
-        daily_stats.append(
-            {
-                "trade_date": day.date(),
-                "mean": float(factors_vals.mean()),
-                "std": float(factors_vals.std()),
-                "max": float(factors_vals.max()),
-                "min": float(factors_vals.min()),
-            }
-        )
-        zero_one_records.append(
-            {
-                "trade_date": day.date(),
-                "zero_pct": float((factors_vals == 0).mean()),
-                "one_pct": float((factors_vals == 1).mean()),
-            }
-        )
 
         try:
             bins_cat = pd.qcut(factors_vals, bins, labels=False, duplicates="drop")
@@ -180,20 +195,28 @@ def _render_report(
     else:
         bin_stats = pd.DataFrame(columns=["bin", "factor_mean", "return_mean"])
 
-    daily_stats_df = pd.DataFrame(daily_stats).sort_values("trade_date")
-    zero_one_df = pd.DataFrame(zero_one_records).sort_values("trade_date")
-
     daily_returns_path = out_dir / "daily_returns.csv"
     if daily_returns_path.exists():
         daily_returns_df = pd.read_csv(daily_returns_path, parse_dates=["trade_date"])
     else:
         daily_returns_df = pd.DataFrame()
+    positions_path = out_dir / "positions.csv"
+    if positions_path.exists():
+        positions_df = pd.read_csv(positions_path)
+    else:
+        positions_df = pd.DataFrame()
+    nav_curve_path = out_dir / "nav_curve.csv"
+    if nav_curve_path.exists():
+        nav_curve_df = pd.read_csv(nav_curve_path, parse_dates=["trade_date"])
+    else:
+        nav_curve_df = pd.DataFrame()
 
     out_dir.mkdir(parents=True, exist_ok=True)
     ic_df.to_csv(out_dir / "ic_series.csv", index=False)
     bin_stats.to_csv(out_dir / "factor_bins.csv", index=False)
-    daily_stats_df.to_csv(out_dir / "factor_daily_stats.csv", index=False)
-    zero_one_df.to_csv(out_dir / "factor_zero_one.csv", index=False)
+    metrics = _calc_performance_metrics(daily_returns_df, nav_curve_df)
+    metrics["turnover"] = _calc_turnover(positions_df)
+    pd.DataFrame([metrics]).to_csv(out_dir / "factor_metrics.csv", index=False)
 
     fig, axes = plt.subplots(2, 3, figsize=(13.5, 7.5))
     ax = axes[0, 0]
@@ -206,9 +229,9 @@ def _render_report(
     ax.grid(True, alpha=0.3)
 
     ax = axes[0, 1]
-    metrics = ["IC", "IR", "Rank_IC", "Rank_IR"]
+    metric_labels = ["IC", "IR", "Rank_IC", "Rank_IR"]
     values = [ic_mean, ic_ir, rank_ic_mean, rank_ic_ir]
-    ax.bar(metrics, values, color=["#3C8DBC", "#1F77B4", "#9467BD", "#FF7F0E"])
+    ax.bar(metric_labels, values, color=["#3C8DBC", "#1F77B4", "#9467BD", "#FF7F0E"])
     for idx, val in enumerate(values):
         ax.text(idx, val, f"{val:.4f}", ha="center", va="bottom", fontsize=8)
     ax.set_title("IC & IR (mean)")
@@ -247,14 +270,13 @@ def _render_report(
     ax.grid(True, alpha=0.3)
 
     ax = axes[1, 1]
-    if not daily_stats_df.empty:
-        ax.plot(daily_stats_df["trade_date"], daily_stats_df["mean"], label="mean")
-        ax.plot(daily_stats_df["trade_date"], daily_stats_df["std"], label="std")
-        ax.plot(daily_stats_df["trade_date"], daily_stats_df["max"], label="max")
-        ax.plot(daily_stats_df["trade_date"], daily_stats_df["min"], label="min")
-    ax.set_title("Factor daily stats")
-    ax.legend(fontsize=8)
-    ax.grid(True, alpha=0.3)
+    metric_names = ["sharpe", "maxdd", "win_rate", "turnover"]
+    metric_vals = [metrics[m] for m in metric_names]
+    ax.bar(metric_names, metric_vals, color=["#4C78A8", "#F58518", "#54A24B", "#B279A2"])
+    for idx, val in enumerate(metric_vals):
+        ax.text(idx, val, f"{val:.4f}", ha="center", va="bottom", fontsize=8)
+    ax.set_title("Performance metrics")
+    ax.grid(True, axis="y", alpha=0.3)
 
     ax = axes[1, 2]
     if not daily_returns_df.empty:
