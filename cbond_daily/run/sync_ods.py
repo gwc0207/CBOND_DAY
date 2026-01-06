@@ -16,7 +16,7 @@ from cbond_daily.data.io import get_latest_table_date, table_has_data, write_tab
 def main(*, full: bool | None = None) -> None:
     paths_cfg = load_config_file("paths")
     ods_cfg = load_config_file("ods")
-    bt_cfg = load_config_file("backtest")
+    bt_cfg = load_config_file("factor_batch")
     if full is None:
         full = bool(ods_cfg.get("full_refresh", False))
 

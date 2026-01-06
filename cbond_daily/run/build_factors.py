@@ -15,7 +15,7 @@ from cbond_daily.factors import builtin  # noqa: F401
 def main() -> None:
     paths_cfg = load_config_file("paths")
     factors_cfg = load_config_file("factors")
-    bt_cfg = load_config_file("backtest")
+    bt_cfg = load_config_file("factor_batch")
 
     dwd_root = paths_cfg["dwd_root"]
     dws_root = paths_cfg["dws_root"]

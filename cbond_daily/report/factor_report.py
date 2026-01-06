@@ -196,18 +196,27 @@ def _render_report(
         bin_stats = pd.DataFrame(columns=["bin", "factor_mean", "return_mean"])
 
     daily_returns_path = out_dir / "daily_returns.csv"
-    if daily_returns_path.exists():
-        daily_returns_df = pd.read_csv(daily_returns_path, parse_dates=["trade_date"])
+    if daily_returns_path.exists() and daily_returns_path.stat().st_size > 0:
+        try:
+            daily_returns_df = pd.read_csv(daily_returns_path, parse_dates=["trade_date"])
+        except pd.errors.EmptyDataError:
+            daily_returns_df = pd.DataFrame()
     else:
         daily_returns_df = pd.DataFrame()
     positions_path = out_dir / "positions.csv"
-    if positions_path.exists():
-        positions_df = pd.read_csv(positions_path)
+    if positions_path.exists() and positions_path.stat().st_size > 0:
+        try:
+            positions_df = pd.read_csv(positions_path)
+        except pd.errors.EmptyDataError:
+            positions_df = pd.DataFrame()
     else:
         positions_df = pd.DataFrame()
     nav_curve_path = out_dir / "nav_curve.csv"
-    if nav_curve_path.exists():
-        nav_curve_df = pd.read_csv(nav_curve_path, parse_dates=["trade_date"])
+    if nav_curve_path.exists() and nav_curve_path.stat().st_size > 0:
+        try:
+            nav_curve_df = pd.read_csv(nav_curve_path, parse_dates=["trade_date"])
+        except pd.errors.EmptyDataError:
+            nav_curve_df = pd.DataFrame()
     else:
         nav_curve_df = pd.DataFrame()
 
@@ -360,5 +369,3 @@ def run_factor_report() -> None:
     print(f"saved: {try_dir}")
 
 
-if __name__ == "__main__":
-    run_factor_report()

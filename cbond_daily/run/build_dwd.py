@@ -16,7 +16,7 @@ from cbond_daily.data.io import get_latest_dwd_date
 def main() -> None:
     paths_cfg = load_config_file("paths")
     dwd_cfg = load_config_file("dwd")
-    bt_cfg = load_config_file("backtest")
+    bt_cfg = load_config_file("factor_batch")
 
     ods_root = paths_cfg["ods_root"]
     dwd_root = paths_cfg["dwd_root"]

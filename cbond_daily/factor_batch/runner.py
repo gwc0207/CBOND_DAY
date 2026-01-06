@@ -57,9 +57,11 @@ def _write_result(out_dir: Path, result) -> None:
     daily = result.daily_returns if result.daily_returns is not None else pd.DataFrame()
     nav = result.nav_curve if result.nav_curve is not None else pd.DataFrame()
     positions = result.positions if result.positions is not None else pd.DataFrame()
+    diagnostics = result.diagnostics if result.diagnostics is not None else pd.DataFrame()
     daily.to_csv(out_dir / "daily_returns.csv", index=False)
     nav.to_csv(out_dir / "nav_curve.csv", index=False)
     positions.to_csv(out_dir / "positions.csv", index=False)
+    diagnostics.to_csv(out_dir / "diagnostics.csv", index=False)
 
 
 def _plot_nav_compare(nav_map: dict[str, pd.DataFrame], out_path: Path) -> None:
@@ -68,13 +70,20 @@ def _plot_nav_compare(nav_map: dict[str, pd.DataFrame], out_path: Path) -> None:
     if not nav_map:
         return
     fig, ax = plt.subplots(figsize=(10, 4.2))
+    has_label = False
     for signal_id, nav_df in nav_map.items():
+        if nav_df is None or nav_df.empty:
+            continue
+        if "trade_date" not in nav_df.columns or "nav" not in nav_df.columns:
+            continue
         ax.plot(nav_df["trade_date"], nav_df["nav"], linewidth=1.2, label=signal_id)
+        has_label = True
     ax.set_title("Signal NAV Compare")
     ax.set_xlabel("Date")
     ax.set_ylabel("NAV")
     ax.grid(True, alpha=0.3)
-    ax.legend(fontsize=7, ncol=2)
+    if has_label:
+        ax.legend(fontsize=7, ncol=2)
     fig.tight_layout()
     fig.savefig(out_path, dpi=150)
     plt.close(fig)
