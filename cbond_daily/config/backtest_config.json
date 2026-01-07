@@ -10,6 +10,8 @@
   "ic_bins": 20,
   "max_workers": 4,
   "batch_id": "Backtest",
+  "bin_source": "auto",
+  "bin_top_k": 2,
   "weight_source": "regression",
   "regression_cfg": {
     "method": "ridge",

@@ -6,6 +6,7 @@ from bisect import bisect_left
 from pathlib import Path
 
 import pandas as pd
+import numpy as np
 
 from cbond_daily.data.io import read_dwd_daily, read_dws_factors_daily
 from .execution import apply_twap_bps
@@ -53,6 +54,82 @@ def _available_dwd_dates(dwd_root: str) -> list[date]:
         dates.append(day)
     dates.sort()
     return dates
+
+
+def _select_bins_by_mean_return(
+    *,
+    dwd_root: str,
+    dws_root: str,
+    train_days: list[date],
+    factor_items: list[dict],
+    weights: pd.Series,
+    buy_twap_col: str,
+    sell_twap_col: str,
+    twap_bps: float,
+    bin_count: int,
+) -> list[int]:
+    factor_dates = _available_factor_dates(dws_root)
+    cols = [item["col"] for item in factor_items]
+    per_bin_returns: dict[int, list[float]] = {}
+    for day in train_days:
+        factor_day = _prev_available_date(factor_dates, day)
+        if factor_day is None:
+            continue
+        df = read_dwd_daily(dwd_root, day)
+        if df.empty:
+            continue
+        factors = read_dws_factors_daily(dws_root, factor_day)
+        if factors.empty:
+            continue
+        if "code" not in factors.columns:
+            continue
+        if any(col not in factors.columns for col in cols):
+            continue
+        merged = df.merge(factors[["code"] + cols], on="code", how="left")
+        missing_cols = [c for c in (buy_twap_col, sell_twap_col) if c not in merged.columns]
+        if missing_cols:
+            continue
+        tradable = merged[
+            merged[buy_twap_col].notna()
+            & merged[sell_twap_col].notna()
+            & (merged[buy_twap_col] > 0)
+            & (merged[sell_twap_col] > 0)
+        ]
+        if tradable.empty:
+            continue
+        work = tradable[cols].copy().apply(_zscore)
+        valid_mask = work.notna()
+        denom = valid_mask.mul(weights.abs(), axis=1).sum(axis=1)
+        weighted = work.mul(weights, axis=1).sum(axis=1)
+        composite = weighted.where(denom > 0).div(denom)
+        if composite.isna().all():
+            continue
+        tradable = tradable.copy()
+        tradable["composite_factor"] = composite
+        try:
+            bins_cat = pd.qcut(
+                tradable["composite_factor"],
+                bin_count,
+                labels=False,
+                duplicates="drop",
+            )
+        except ValueError:
+            continue
+        if bins_cat.dropna().empty:
+            continue
+        buy_px = apply_twap_bps(tradable[buy_twap_col], twap_bps, side="buy")
+        sell_px = apply_twap_bps(tradable[sell_twap_col], twap_bps, side="sell")
+        returns = (sell_px - buy_px) / buy_px
+        for bin_id in bins_cat.dropna().unique():
+            mask = bins_cat == bin_id
+            if mask.sum() == 0:
+                continue
+            per_bin_returns.setdefault(int(bin_id), []).append(float(returns[mask].mean()))
+    if not per_bin_returns:
+        return []
+    mean_ret = {k: float(np.mean(v)) for k, v in per_bin_returns.items() if v}
+    ranked = sorted(mean_ret.items(), key=lambda x: x[1], reverse=True)
+    return [b for b, _ in ranked]
 
 def run_backtest(
     dwd_root: str,
@@ -231,6 +308,8 @@ def run_backtest_linear(
     normalize: str = "zscore",
     weight_source: str = "manual",
     regression_cfg: dict | None = None,
+    bin_source: str = "manual",
+    bin_top_k: int = 2,
     weights_output_dir: Path | None = None,
 ) -> BacktestResult:
     result = BacktestResult()
@@ -336,6 +415,20 @@ def run_backtest_linear(
                     header = not out_path.exists()
                     out_df.to_csv(out_path, index=False, mode="a", header=header)
                 last_refit_idx = idx
+                if bin_source == "auto":
+                    ranked_bins = _select_bins_by_mean_return(
+                        dwd_root=dwd_root,
+                        dws_root=dws_root,
+                        train_days=train_days,
+                        factor_items=factor_items,
+                        weights=weights,
+                        buy_twap_col=buy_twap_col,
+                        sell_twap_col=sell_twap_col,
+                        twap_bps=twap_bps,
+                        bin_count=bin_count,
+                    )
+                    if len(ranked_bins) >= bin_top_k:
+                        bin_select = ranked_bins[:bin_top_k]
         work = tradable[cols].copy()
         if normalize == "zscore":
             work = work.apply(_zscore)

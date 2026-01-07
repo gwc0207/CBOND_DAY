@@ -3,5 +3,5 @@
   "dwd_root": "D:/cbond_daily/clean_data",
   "dws_root": "D:/cbond_daily/factor_data",
   "ads_root": "D:/cbond_daily/ads",
-  "logs": "D:/cbond_daily/logs"
+  "results": "D:/cbond_daily/results"
 }

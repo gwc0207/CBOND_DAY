@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from bisect import bisect_left
+import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -14,22 +15,19 @@ from cbond_daily.core.naming import build_factor_col
 from cbond_daily.data.io import read_dwd_daily, read_dws_factors_daily
 
 
-def _latest_try_dir(base: Path) -> Path | None:
+def _latest_run_dir(base: Path) -> Path | None:
     if not base.exists():
         return None
-    latest: Path | None = None
-    max_idx = -1
-    for path in base.iterdir():
-        if not path.is_dir() or not path.name.startswith("Try_"):
-            continue
-        try:
-            idx = int(path.name.split("_", 1)[1])
-        except (IndexError, ValueError):
-            continue
-        if idx > max_idx:
-            max_idx = idx
-            latest = path
-    return latest
+    dirs = [path for path in base.iterdir() if path.is_dir()]
+    if not dirs:
+        return None
+    ts_dirs = [p for p in dirs if re.match(r"^\d{8}_\d{6}$", p.name)]
+    if ts_dirs:
+        return max(ts_dirs, key=lambda p: p.name)
+    try_dirs = [p for p in dirs if p.name.startswith("Try_")]
+    if try_dirs:
+        return max(try_dirs, key=lambda p: p.name)
+    return max(dirs, key=lambda p: p.name)
 
 
 def _calc_daily_return(df: pd.DataFrame, buy_col: str, sell_col: str, bps: float) -> pd.Series:
@@ -337,9 +335,9 @@ def run_backtest_report() -> None:
 
     dwd_root = paths_cfg["dwd_root"]
     dws_root = paths_cfg["dws_root"]
-    logs_root = paths_cfg.get("logs")
+    logs_root = paths_cfg.get("results")
     if not logs_root:
-        raise KeyError("missing logs in paths_config.json")
+        raise KeyError("missing results in paths_config.json")
 
     start = parse_date(cfg["start"])
     end = parse_date(cfg["end"])
@@ -355,8 +353,8 @@ def run_backtest_report() -> None:
     date_dir = f"{start:%Y-%m-%d}_{end:%Y-%m-%d}"
     batch_id = cfg.get("batch_id", "Backtest")
     base_dir = Path(logs_root) / date_dir / batch_id
-    try_dir = _latest_try_dir(base_dir)
-    if try_dir is None:
+    run_dir = _latest_run_dir(base_dir)
+    if run_dir is None:
         raise FileNotFoundError(f"missing backtest output under {base_dir}")
 
     for signal in signals:
@@ -368,7 +366,7 @@ def run_backtest_report() -> None:
         for it in items:
             col = build_factor_col(it["name"], it.get("params"))
             factor_items.append({"col": col, "w": float(it.get("w", 0.0))})
-        out_dir = try_dir / signal_name
+        out_dir = run_dir / signal_name
         _render_report(
             dwd_root=dwd_root,
             dws_root=dws_root,
@@ -381,4 +379,4 @@ def run_backtest_report() -> None:
             bps=bps,
             bins=bins,
         )
-    print(f"saved: {try_dir}")
+    print(f"saved: {run_dir}")

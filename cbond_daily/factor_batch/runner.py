@@ -35,21 +35,9 @@ def _params_to_str(params: dict) -> str:
     return "_".join(parts)
 
 
-def _next_try_dir(base: Path) -> Path:
-    if not base.exists():
-        return base / "Try_1"
-    max_idx = 0
-    for path in base.iterdir():
-        if not path.is_dir():
-            continue
-        if not path.name.startswith("Try_"):
-            continue
-        try:
-            idx = int(path.name.split("_", 1)[1])
-        except (IndexError, ValueError):
-            continue
-        max_idx = max(max_idx, idx)
-    return base / f"Try_{max_idx + 1}"
+def _next_run_dir(base: Path) -> Path:
+    ts = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+    return base / ts
 
 
 def _write_result(out_dir: Path, result) -> None:
@@ -108,7 +96,7 @@ def run_factor_batch(
 ) -> Path:
     date_dir = f"{start:%Y-%m-%d}_{end:%Y-%m-%d}"
     base_dir = Path(logs_root) / date_dir / batch_id
-    try_dir = _next_try_dir(base_dir)
+    try_dir = _next_run_dir(base_dir)
     try_dir.mkdir(parents=True, exist_ok=True)
 
     summary_rows: list[dict] = []

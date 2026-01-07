@@ -3,6 +3,7 @@
   "overwrite": false,
   "factors": [
     { "name": "intraday_momentum" },
-    { "name": "liquidity" }
+    { "name": "liquidity" },
+    { "name": "mser", "params": { "ema_span": 20, "mean_window": 9 } }
   ]
 }

@@ -69,7 +69,7 @@ def main() -> None:
     run_factor_batch(
         dwd_root=paths_cfg["dwd_root"],
         dws_root=paths_cfg["dws_root"],
-        logs_root=paths_cfg["logs"],
+        logs_root=paths_cfg["results"],
         start=start,
         end=end,
         buy_twap_col=exp_cfg["buy_twap_col"],

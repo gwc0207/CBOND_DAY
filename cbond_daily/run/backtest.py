@@ -18,19 +18,9 @@ from cbond_daily.core.config import load_config_file, parse_date
 from cbond_daily.core.naming import build_factor_col
 
 
-def _next_try_dir(base: Path) -> Path:
-    if not base.exists():
-        return base / "Try_1"
-    max_idx = 0
-    for path in base.iterdir():
-        if not path.is_dir() or not path.name.startswith("Try_"):
-            continue
-        try:
-            idx = int(path.name.split("_", 1)[1])
-        except (IndexError, ValueError):
-            continue
-        max_idx = max(max_idx, idx)
-    return base / f"Try_{max_idx + 1}"
+def _next_run_dir(base: Path) -> Path:
+    ts = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+    return base / ts
 
 
 def _write_result(out_dir: Path, result) -> None:
@@ -53,11 +43,11 @@ def main() -> None:
     end = parse_date(cfg["end"])
     batch_id = cfg.get("batch_id", "Backtest")
 
-    logs_root = Path(paths_cfg["logs"])
+    logs_root = Path(paths_cfg["results"])
     date_dir = f"{start:%Y-%m-%d}_{end:%Y-%m-%d}"
     base_dir = logs_root / date_dir / batch_id
-    try_dir = _next_try_dir(base_dir)
-    try_dir.mkdir(parents=True, exist_ok=True)
+    run_dir = _next_run_dir(base_dir)
+    run_dir.mkdir(parents=True, exist_ok=True)
 
     signals = cfg.get("signals", [])
     if not signals:
@@ -78,7 +68,7 @@ def main() -> None:
             col = build_factor_col(it["name"], it.get("params"))
             factor_items.append({"col": col, "w": float(it.get("w", 0.0))})
 
-        out_dir = try_dir / signal_name
+        out_dir = run_dir / signal_name
         result = run_backtest_linear(
             dwd_root=paths_cfg["dwd_root"],
             dws_root=paths_cfg["dws_root"],
@@ -95,6 +85,8 @@ def main() -> None:
             normalize=normalize,
             weight_source=cfg.get("weight_source", "manual"),
             regression_cfg=cfg.get("regression_cfg"),
+            bin_source=cfg.get("bin_source", "manual"),
+            bin_top_k=int(cfg.get("bin_top_k", 2)),
             weights_output_dir=out_dir,
         )
         _write_result(out_dir, result)
@@ -118,7 +110,7 @@ def main() -> None:
             summary_rows.append(fut.result())
 
     summary_df = pd.DataFrame(summary_rows).sort_values("signal_id")
-    summary_df.to_csv(try_dir / "summary.csv", index=False)
+    summary_df.to_csv(run_dir / "summary.csv", index=False)
     run_backtest_report()
 
 
