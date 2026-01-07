@@ -89,10 +89,13 @@ def main() -> None:
             sell_twap_col=cfg["sell_twap_col"],
             min_count=int(cfg["min_count"]),
             max_weight=float(cfg["max_weight"]),
-            twap_bps=float(cfg["twap_bps"]),
+            twap_bps=float(cfg["twap_bps"]) + float(cfg.get("fee_bps", 0.0)),
             bin_count=int(cfg.get("ic_bins", 20)),
             bin_select=[int(x) for x in bin_select],
             normalize=normalize,
+            weight_source=cfg.get("weight_source", "manual"),
+            regression_cfg=cfg.get("regression_cfg"),
+            weights_output_dir=out_dir,
         )
         _write_result(out_dir, result)
         daily = result.daily_returns if result.daily_returns is not None else pd.DataFrame()

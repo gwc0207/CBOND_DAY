@@ -9,6 +9,7 @@ import pandas as pd
 
 from cbond_daily.data.io import read_dwd_daily, read_dws_factors_daily
 from .execution import apply_twap_bps
+from .weight_fit import fit_linear_weights
 
 
 @dataclass
@@ -40,6 +41,18 @@ def _prev_available_date(dates: list[date], day: date) -> date | None:
         return None
     return dates[idx - 1]
 
+
+def _available_dwd_dates(dwd_root: str) -> list[date]:
+    base = Path(dwd_root)
+    dates: list[date] = []
+    for path in base.glob("*/*.parquet"):
+        try:
+            day = datetime.strptime(path.stem, "%Y%m%d").date()
+        except ValueError:
+            continue
+        dates.append(day)
+    dates.sort()
+    return dates
 
 def run_backtest(
     dwd_root: str,
@@ -216,17 +229,23 @@ def run_backtest_linear(
     bin_count: int,
     bin_select: list[int],
     normalize: str = "zscore",
+    weight_source: str = "manual",
+    regression_cfg: dict | None = None,
+    weights_output_dir: Path | None = None,
 ) -> BacktestResult:
     result = BacktestResult()
     daily_records: list[dict] = []
     position_records: list[dict] = []
     diagnostics: list[dict] = []
     factor_dates = _available_factor_dates(dws_root)
+    dwd_dates = _available_dwd_dates(dwd_root)
 
     cols = [item["col"] for item in factor_items]
-    weights = pd.Series([item["w"] for item in factor_items], index=cols, dtype=float)
+    manual_weights = pd.Series([item["w"] for item in factor_items], index=cols, dtype=float)
+    weights = manual_weights.copy()
+    last_refit_idx: int | None = None
 
-    for day in pd.date_range(start, end, freq="D"):
+    for idx, day in enumerate(pd.date_range(start, end, freq="D")):
         df = read_dwd_daily(dwd_root, day.date())
         if df.empty:
             diagnostics.append({"trade_date": day.date(), "status": "skip", "reason": "missing_dwd"})
@@ -267,6 +286,56 @@ def run_backtest_linear(
         if tradable.empty:
             diagnostics.append({"trade_date": day.date(), "status": "skip", "reason": "no_tradable"})
             continue
+        if weight_source == "regression":
+            cfg = regression_cfg or {}
+            lookback_days = int(cfg.get("lookback_days", 60))
+            refit_freq = int(cfg.get("refit_freq", 1))
+            need_refit = last_refit_idx is None or (idx - last_refit_idx) >= refit_freq
+            if need_refit:
+                train_days = [d for d in dwd_dates if d < day.date()][-lookback_days:]
+                label_cfg = {
+                    "buy_twap_col": buy_twap_col,
+                    "sell_twap_col": sell_twap_col,
+                    "twap_bps": twap_bps,
+                    "fee_bps": float(cfg.get("fee_bps", 0.0)),
+                    "include_cost_in_label": bool(cfg.get("include_cost_in_label", False)),
+                }
+                fit = fit_linear_weights(
+                    train_days,
+                    cols,
+                    label_cfg,
+                    cfg,
+                    dwd_root=dwd_root,
+                    dws_root=dws_root,
+                    factor_dates={d: _prev_available_date(factor_dates, d) for d in train_days},
+                )
+                if fit is None:
+                    fallback = cfg.get("fallback", "manual")
+                    if fallback == "equal":
+                        weights = pd.Series(1.0, index=cols) / len(cols)
+                    else:
+                        weights = manual_weights.copy()
+                else:
+                    weights = fit.weights.copy()
+                max_w = float(cfg.get("max_weight", 3.0))
+                weights = weights.clip(-max_w, max_w)
+                if cfg.get("normalize", "l1") == "l1":
+                    denom = weights.abs().sum()
+                    if denom > 0:
+                        weights = weights / denom
+                if weights_output_dir is not None:
+                    weights_output_dir.mkdir(parents=True, exist_ok=True)
+                    out_path = weights_output_dir / "weights_history.csv"
+                    out_df = pd.DataFrame(
+                        {
+                            "trade_date": [day.date()] * len(weights),
+                            "factor": weights.index,
+                            "weight": weights.values,
+                        }
+                    )
+                    header = not out_path.exists()
+                    out_df.to_csv(out_path, index=False, mode="a", header=header)
+                last_refit_idx = idx
         work = tradable[cols].copy()
         if normalize == "zscore":
             work = work.apply(_zscore)
