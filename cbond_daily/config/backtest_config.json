@@ -1,0 +1,23 @@
+{
+  "start": "2024-01-01",
+  "end": "2025-12-31",
+  "min_count": 30,
+  "max_weight": 0.05,
+  "buy_twap_col": "twap_0930_1000",
+  "sell_twap_col": "twap_1430_1500",
+  "twap_bps": 1.5,
+  "ic_bins": 20,
+  "max_workers": 4,
+  "batch_id": "Backtest",
+  "signals": [
+    {
+      "name": "combo_default",
+      "bin_select": [18, 19],
+      "normalize": "zscore",
+      "items": [
+        { "name": "intraday_momentum", "params": {}, "w": 1.0 },
+        { "name": "liquidity", "params": {}, "w": 1.0}
+      ]
+    }
+  ]
+}

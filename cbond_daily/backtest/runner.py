@@ -191,3 +191,188 @@ def run_backtest(
     if diagnostics:
         result.diagnostics = pd.DataFrame(diagnostics).sort_values("trade_date")
     return result
+
+
+def _zscore(series: pd.Series) -> pd.Series:
+    mean = series.mean()
+    std = series.std(ddof=0)
+    if std == 0 or pd.isna(std):
+        return pd.Series([pd.NA] * len(series), index=series.index)
+    return (series - mean) / std
+
+
+def run_backtest_linear(
+    *,
+    dwd_root: str,
+    dws_root: str,
+    start: date,
+    end: date,
+    factor_items: list[dict],
+    buy_twap_col: str,
+    sell_twap_col: str,
+    min_count: int,
+    max_weight: float,
+    twap_bps: float,
+    bin_count: int,
+    bin_select: list[int],
+    normalize: str = "zscore",
+) -> BacktestResult:
+    result = BacktestResult()
+    daily_records: list[dict] = []
+    position_records: list[dict] = []
+    diagnostics: list[dict] = []
+    factor_dates = _available_factor_dates(dws_root)
+
+    cols = [item["col"] for item in factor_items]
+    weights = pd.Series([item["w"] for item in factor_items], index=cols, dtype=float)
+
+    for day in pd.date_range(start, end, freq="D"):
+        df = read_dwd_daily(dwd_root, day.date())
+        if df.empty:
+            diagnostics.append({"trade_date": day.date(), "status": "skip", "reason": "missing_dwd"})
+            continue
+        factor_day = _prev_available_date(factor_dates, day.date())
+        if factor_day is None:
+            diagnostics.append({"trade_date": day.date(), "status": "skip", "reason": "missing_factor"})
+            continue
+        factors = read_dws_factors_daily(dws_root, factor_day)
+        if factors.empty:
+            diagnostics.append({"trade_date": day.date(), "status": "skip", "reason": "missing_factor"})
+            continue
+        if "code" not in factors.columns:
+            raise KeyError("missing code column in factor data")
+        if "trade_date" not in df.columns:
+            df["trade_date"] = day.date()
+        missing_factor_cols = [c for c in cols if c not in factors.columns]
+        if missing_factor_cols:
+            diagnostics.append(
+                {
+                    "trade_date": day.date(),
+                    "status": "skip",
+                    "reason": "factor_col_missing",
+                    "missing": ",".join(missing_factor_cols),
+                }
+            )
+            continue
+        merged = df.merge(factors[["code"] + cols], on="code", how="left")
+        missing_cols = [c for c in (buy_twap_col, sell_twap_col) if c not in merged.columns]
+        if missing_cols:
+            raise KeyError(f"missing price columns: {missing_cols}")
+        tradable = merged[
+            merged[buy_twap_col].notna()
+            & merged[sell_twap_col].notna()
+            & (merged[buy_twap_col] > 0)
+            & (merged[sell_twap_col] > 0)
+        ]
+        if tradable.empty:
+            diagnostics.append({"trade_date": day.date(), "status": "skip", "reason": "no_tradable"})
+            continue
+        work = tradable[cols].copy()
+        if normalize == "zscore":
+            work = work.apply(_zscore)
+        else:
+            raise ValueError(f"unknown normalize: {normalize}")
+        valid_mask = work.notna()
+        denom = valid_mask.mul(weights.abs(), axis=1).sum(axis=1)
+        weighted = work.mul(weights, axis=1).sum(axis=1)
+        composite = weighted.where(denom > 0).div(denom)
+        if composite.isna().all():
+            diagnostics.append(
+                {"trade_date": day.date(), "status": "skip", "reason": "composite_all_nan"}
+            )
+            continue
+        tradable = tradable.copy()
+        tradable["composite_factor"] = composite
+
+        try:
+            bins_cat = pd.qcut(
+                tradable["composite_factor"],
+                bin_count,
+                labels=False,
+                duplicates="drop",
+            )
+        except ValueError:
+            diagnostics.append({"trade_date": day.date(), "status": "skip", "reason": "binning_failed"})
+            continue
+        available_bins = sorted(bins_cat.dropna().unique().tolist())
+        if not available_bins:
+            diagnostics.append({"trade_date": day.date(), "status": "skip", "reason": "binning_failed"})
+            continue
+        n_bins = len(available_bins)
+        if max(bin_select) >= n_bins:
+            raise ValueError(
+                f"bin_select out of range: have {n_bins} bins, select {bin_select}"
+            )
+        picks = tradable[bins_cat.isin(bin_select)]
+        if len(picks) < min_count:
+            diagnostics.append(
+                {
+                    "trade_date": day.date(),
+                    "status": "skip",
+                    "reason": "min_count_not_met",
+                    "picked": int(len(picks)),
+                    "bin_used": ",".join(str(x) for x in bin_select),
+                    "bin_count_actual": n_bins,
+                }
+            )
+            continue
+        buy_px = apply_twap_bps(picks[buy_twap_col], twap_bps, side="buy")
+        sell_px = apply_twap_bps(picks[sell_twap_col], twap_bps, side="sell")
+        returns = (sell_px - buy_px) / buy_px
+        weight = min(1.0 / len(picks), max_weight)
+        day_return = float((returns * weight).sum())
+        total_weight = float(weight * len(picks))
+        bench_buy = apply_twap_bps(tradable[buy_twap_col], twap_bps, side="buy")
+        bench_sell = apply_twap_bps(tradable[sell_twap_col], twap_bps, side="sell")
+        bench_returns = (bench_sell - bench_buy) / bench_buy
+        bench_weight = 1.0 / len(tradable)
+        bench_day_return = float((bench_returns * bench_weight).sum())
+        daily_records.append(
+            {
+                "trade_date": day.date(),
+                "count": int(len(picks)),
+                "avg_return": float(returns.mean()),
+                "day_return": day_return,
+                "benchmark_count": int(len(tradable)),
+                "benchmark_return": bench_day_return,
+                "total_weight": total_weight,
+            }
+        )
+        for idx, row in picks.iterrows():
+            position_records.append(
+                {
+                    "trade_date": day.date(),
+                    "code": row["code"],
+                    "factor": float(row["composite_factor"])
+                    if pd.notna(row["composite_factor"])
+                    else None,
+                    "weight": weight,
+                    "buy_price": float(buy_px.loc[idx]),
+                    "sell_price": float(sell_px.loc[idx]),
+                    "return": float(returns.loc[idx]),
+                }
+            )
+        result.days += 1
+        diagnostics.append(
+            {
+                "trade_date": day.date(),
+                "status": "ok",
+                "reason": "",
+                "bin_used": ",".join(str(x) for x in bin_select),
+                "bin_count_actual": n_bins,
+            }
+        )
+
+    if daily_records:
+        daily_df = pd.DataFrame(daily_records).sort_values("trade_date")
+        nav = (1.0 + daily_df["day_return"]).cumprod()
+        nav_df = pd.DataFrame({"trade_date": daily_df["trade_date"], "nav": nav})
+        bench_nav = (1.0 + daily_df["benchmark_return"]).cumprod()
+        bench_df = pd.DataFrame({"trade_date": daily_df["trade_date"], "nav": bench_nav})
+        result.daily_returns = daily_df
+        result.nav_curve = nav_df
+        result.benchmark_curve = bench_df
+        result.positions = pd.DataFrame(position_records)
+    if diagnostics:
+        result.diagnostics = pd.DataFrame(diagnostics).sort_values("trade_date")
+    return result
