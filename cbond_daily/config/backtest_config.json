@@ -32,7 +32,8 @@
       "normalize": "zscore",
       "items": [
         { "name": "intraday_momentum", "params": {}, "w": 1.0 },
-        { "name": "liquidity", "params": {}, "w": -1.0}
+        { "name": "liquidity", "params": {}, "w": 1.0},
+        { "name": "mser", "params": {}, "w": 1.0 }
       ]
     }
   ]
