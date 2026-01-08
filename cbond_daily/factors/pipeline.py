@@ -84,7 +84,7 @@ def run_factor_pipeline(
                 new_cols[col_name] = factor.compute(df)
                 done += 1
                 pct = int(done * 100 / total_tasks) if total_tasks else 100
-                if pct != last_pct:
+                if pct % 20 == 0 and pct != last_pct:
                     last_pct = pct
                     print(f"factor_pipeline progress: {pct}% ({done}/{total_tasks})")
                 continue
@@ -119,7 +119,7 @@ def run_factor_pipeline(
             new_cols[col_name] = series_day
             done += 1
             pct = int(done * 100 / total_tasks) if total_tasks else 100
-            if pct != last_pct:
+            if pct % 20 == 0 and pct != last_pct:
                 last_pct = pct
                 print(f"factor_pipeline progress: {pct}% ({done}/{total_tasks})")
         if not new_cols:

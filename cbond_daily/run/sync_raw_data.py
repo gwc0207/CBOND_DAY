@@ -15,16 +15,16 @@ from cbond_daily.data.io import get_latest_table_date, table_has_data, write_tab
 
 def main(*, full: bool | None = None) -> None:
     paths_cfg = load_config_file("paths")
-    ods_cfg = load_config_file("ods")
+    raw_cfg = load_config_file("raw_data")
     bt_cfg = load_config_file("factor_batch")
     if full is None:
-        full = bool(ods_cfg.get("full_refresh", False))
+        full = bool(raw_cfg.get("full_refresh", False))
 
     ods_root = paths_cfg["ods_root"]
     start = parse_date(bt_cfg["start"])
     end = parse_date(bt_cfg["end"])
 
-    for table in ods_cfg.get("sync_tables", []):
+    for table in raw_cfg.get("sync_tables", []):
         last_date = None if full else get_latest_table_date(ods_root, table)
         date_based = table in DATE_COLUMNS
         if date_based:

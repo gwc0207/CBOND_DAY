@@ -4,9 +4,9 @@
 
 ## 快速流程
 
-1) 同步 ODS（数据读取略）
-2) 构建 DWD（日级明细）
-3) 计算因子并写入 DWS
+1) 同步 raw data（数据读取略）
+2) 构建 cleaned data（日级明细）
+3) 计算因子并写入 factor data
 4) 单因子批量回测（含报告）
 
 一键流程：
@@ -21,17 +21,17 @@ python -m cbond_daily.run.backtest
 
 ## 数据层与目录
 
-- ODS：原始同步数据（由同步模块产出）
-- DWD：清洗后的日级明细，路径：`D:/cbond_daily/clean_data/YYYY-MM/YYYYMMDD.parquet`
-- DWS：因子结果，路径：`D:/cbond_daily/factor_data/YYYY-MM/YYYYMMDD.parquet`
+- raw data：原始同步数据（由同步模块产出）
+- cleaned data：清洗后的日级明细，路径：`D:/cbond_daily/clean_data/YYYY-MM/YYYYMMDD.parquet`
+- factor data：因子结果，路径：`D:/cbond_daily/factor_data/YYYY-MM/YYYYMMDD.parquet`
 - 回测结果：`D:/cbond_daily/results/<start>_<end>/<batch>/<timestamp>/...`
 
 路径配置：`cbond_daily/config/paths_config.json`
 
 ## 配置入口
 
-- ODS：`cbond_daily/config/ods_config.json`
-- DWD：`cbond_daily/config/dwd_config.json`
+- raw data：`cbond_daily/config/raw_data_config.json`
+- cleaned data：`cbond_daily/config/cleaned_data_config.json`
 - 因子计算：`cbond_daily/config/factors_config.json`
 - 单因子批量：`cbond_daily/config/factor_batch_config.json`
 - 多因子回测：`cbond_daily/config/backtest_config.json`
@@ -61,7 +61,7 @@ python -m cbond_daily.run.backtest
 - 通用算子集中在 `cbond_daily/factors/operators.py`
 - 因子内部推荐用 `ops.xxx()` 组合表达
 
-因子列命名规则（用于 DWS 列名）：
+因子列命名规则（用于 factor data 列名）：
 - 无参数：`name_`
 - 有参数：`name_param1_param2_`（按参数 key 排序）
 

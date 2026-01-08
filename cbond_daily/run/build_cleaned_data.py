@@ -15,14 +15,14 @@ from cbond_daily.data.io import get_latest_dwd_date
 
 def main() -> None:
     paths_cfg = load_config_file("paths")
-    dwd_cfg = load_config_file("dwd")
+    cleaned_cfg = load_config_file("cleaned_data")
     bt_cfg = load_config_file("factor_batch")
 
     ods_root = paths_cfg["ods_root"]
     dwd_root = paths_cfg["dwd_root"]
     start = parse_date(bt_cfg["start"])
     end = parse_date(bt_cfg["end"])
-    full_refresh = bool(dwd_cfg.get("full_refresh", False))
+    full_refresh = bool(cleaned_cfg.get("full_refresh", False))
     if not full_refresh:
         last_date = get_latest_dwd_date(dwd_root)
         if last_date is not None:
@@ -35,8 +35,8 @@ def main() -> None:
         dwd_root,
         start,
         end,
-        primary_table=dwd_cfg["primary_table"],
-        merge_tables=dwd_cfg["merge_tables"],
+        primary_table=cleaned_cfg["primary_table"],
+        merge_tables=cleaned_cfg["merge_tables"],
     )
 
 
