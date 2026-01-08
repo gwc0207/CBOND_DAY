@@ -56,15 +56,16 @@ def main() -> None:
     if not signals:
         raise ValueError("factor_batch_config.json missing signals")
 
-    run_factor_pipeline(
-        paths_cfg["dwd_root"],
-        paths_cfg["dws_root"],
-        start,
-        end,
-        factors,
-        update_only=exp_cfg.get("update_only"),
-        overwrite=bool(exp_cfg.get("overwrite", False)),
-    )
+    if bool(exp_cfg.get("write_factors", True)):
+        run_factor_pipeline(
+            paths_cfg["dwd_root"],
+            paths_cfg["dws_root"],
+            start,
+            end,
+            factors,
+            update_only=exp_cfg.get("update_only"),
+            overwrite=bool(exp_cfg.get("overwrite", False)),
+        )
 
     run_factor_batch(
         dwd_root=paths_cfg["dwd_root"],

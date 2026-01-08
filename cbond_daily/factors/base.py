@@ -13,6 +13,9 @@ class Factor(ABC):
     def compute(self, data: pd.DataFrame) -> pd.Series:
         raise NotImplementedError
 
+    def required_lookback(self) -> int:
+        return 1
+
 
 class FactorRegistry:
     _items: dict[str, type] = {}

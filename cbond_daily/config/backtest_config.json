@@ -1,22 +1,22 @@
 {
   "start": "2024-01-01",
   "end": "2025-12-31",
-  "min_count": 30,
+  "min_count": 20,
   "max_weight": 0.05,
   "buy_twap_col": "twap_0930_1000",
   "sell_twap_col": "twap_1430_1500",
   "twap_bps": 1.5,
   "fee_bps": 0.7,
   "ic_bins": 20,
-  "max_workers": 4,
+  "max_workers": 10,
   "batch_id": "Backtest",
-  "bin_source": "auto",
+  "bin_source": "manual",
   "bin_top_k": 2,
   "weight_source": "regression",
   "regression_cfg": {
     "method": "ridge",
-    "ridge_alpha": 10.0,
-    "lookback_days": 60,
+    "ridge_alpha": 2.0,
+    "lookback_days": 30,
     "refit_freq": 10,
     "min_samples": 500,
     "fit_intercept": true,
@@ -28,12 +28,10 @@
   "signals": [
     {
       "name": "combo_default",
-      "bin_select": [18, 19],
+      "bin_select": [3],
       "normalize": "zscore",
       "items": [
-        { "name": "intraday_momentum", "params": {}, "w": 1.0 },
-        { "name": "liquidity", "params": {}, "w": 1.0},
-        { "name": "mser", "params": {}, "w": 1.0 }
+        { "name": "mser", "params": { "ema_span": 20, "mean_window": 9 }, "w": 1.0 }
       ]
     }
   ]

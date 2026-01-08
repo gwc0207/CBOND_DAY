@@ -6,17 +6,41 @@
   "buy_twap_col": "twap_0930_1000",
   "sell_twap_col": "twap_1430_1500",
   "twap_bps": 1,
-  "max_workers": 4,
-  "overwrite": false,
+  "max_workers": 10,
+  "overwrite": true,
+  "write_factors": true,
   "factors": [
     { "name": "intraday_momentum", "params": {} },
     { "name": "liquidity", "params": {} },
-    { "name": "mser", "params": { "ema_span": 20, "mean_window": 9 } }
+    { "name": "mser", "params": { "ema_span": 20, "mean_window": 9 } },
+    {
+      "name": "expr_alpha_001",
+      "params": {
+        "max_ret_win": 15,
+        "mdm1_win": 8,
+        "wma1_win": 20,
+        "mdm2_win": 6,
+        "max2_win": 60,
+        "delta_win": 9
+      }
+    }
   ],
   "signals": [
     { "name": "intraday_momentum", "params": {}, "bin_select": [3] },
     { "name": "liquidity", "params": {}, "bin_select": [1, 2, 9] },
-    { "name": "mser", "params": { "ema_span": 20, "mean_window": 9 }, "bin_select": [3] }
+    { "name": "mser", "params": { "ema_span": 20, "mean_window": 9 }, "bin_select": [3] },
+    {
+      "name": "expr_alpha_001",
+      "params": {
+        "max_ret_win": 15,
+        "mdm1_win": 8,
+        "wma1_win": 20,
+        "mdm2_win": 6,
+        "max2_win": 60,
+        "delta_win": 9
+      },
+      "bin_select": [3]
+    }
   ],
   "batch_id": "Single_Factor"
 }
