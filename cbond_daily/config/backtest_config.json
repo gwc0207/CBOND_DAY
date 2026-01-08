@@ -1,5 +1,5 @@
 {
-  "start": "2024-01-01",
+  "start": "2025-01-01",
   "end": "2025-12-31",
   "min_count": 20,
   "max_weight": 0.05,
@@ -16,8 +16,8 @@
   "regression_cfg": {
     "method": "ridge",
     "ridge_alpha": 2.0,
-    "lookback_days": 30,
-    "refit_freq": 10,
+    "lookback_days": 60,
+    "refit_freq": 1,
     "min_samples": 500,
     "fit_intercept": true,
     "include_cost_in_label": true,
@@ -28,9 +28,11 @@
   "signals": [
     {
       "name": "combo_default",
-      "bin_select": [3],
+      "bin_select": [1,2],
       "normalize": "zscore",
       "items": [
+        { "name": "intraday_momentum", "params": {}, "w": 1.0 },
+        { "name": "liquidity", "params": {}, "w": 1.0 },
         { "name": "mser", "params": { "ema_span": 20, "mean_window": 9 }, "w": 1.0 }
       ]
     }

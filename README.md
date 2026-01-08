@@ -65,6 +65,22 @@ python -m cbond_daily.run.backtest
 - 无参数：`name_`
 - 有参数：`name_param1_param2_`（按参数 key 排序）
 
+## 因子可用字段（cleaned data）
+
+因子计算的输入来自 cleaned data 日级宽表（`D:/cbond_daily/clean_data/YYYY-MM/YYYYMMDD.parquet`）。  
+字段主要分为以下几类（按前缀归类）：
+
+- 行情基础字段：`trade_date`, `code`, `prev_close_price`, `close_price`, `open_price`,
+  `high_price`, `low_price`, `volume`, `amount`, `deal`
+- TWAP/VWAP 分段：`twap_0930_1000`、`twap_1430_1500` 等；`vwap_0930_1000`、`vwap_1430_1500` 等
+- `deriv_*`：衍生指标（久期、转股价值、纯债溢价率、波动率等）
+- `base_*`：基础信息与估值字段（转股价、纯债价值、评级、触发条款等）
+- `rating_*`：评级信息
+- `info_*`：转债与股票静态信息（代码、名称、发行信息等）
+
+说明：
+- 字段是否存在取决于上游表结构与同步范围。
+- 因子使用前建议先确认字段是否在当日文件中存在。
 ## 单因子批量（factor_batch）
 
 入口：`python -m cbond_daily.run.factor_batch`
