@@ -1,6 +1,6 @@
 {
-  "full_refresh": false,
-  "sync_tables": [
+  full_refresh: false,
+  sync_tables: [
     "market_cbond.daily_price",
     "market_cbond.daily_twap",
     "market_cbond.daily_vwap",
@@ -8,7 +8,7 @@
     "market_cbond.daily_base",
     "market_cbond.daily_rating",
     "metadata.cbond_info",
-    "metadata.trading_calendar"
+    "metadata.trading_calendar",
   ],
-  "overwrite": false
+  overwrite: false,
 }

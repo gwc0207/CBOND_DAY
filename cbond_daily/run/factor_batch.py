@@ -52,9 +52,9 @@ def main() -> None:
                 )
             )
     else:
-        raise ValueError("factor_batch_config.json missing signals")
+        raise ValueError("factor_batch_config.json5 missing signals")
     if not signals:
-        raise ValueError("factor_batch_config.json missing signals")
+        raise ValueError("factor_batch_config.json5 missing signals")
 
     if bool(exp_cfg.get("write_factors", True)):
         run_factor_pipeline(

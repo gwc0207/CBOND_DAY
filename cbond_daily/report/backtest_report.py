@@ -381,7 +381,7 @@ def run_backtest_report() -> None:
     dws_root = paths_cfg["dws_root"]
     logs_root = paths_cfg.get("results")
     if not logs_root:
-        raise KeyError("missing results in paths_config.json")
+        raise KeyError("missing results in paths_config.json5")
 
     start = parse_date(cfg["start"])
     end = parse_date(cfg["end"])
@@ -392,7 +392,7 @@ def run_backtest_report() -> None:
 
     signals = cfg.get("signals", [])
     if not signals:
-        raise ValueError("backtest_config.json missing signals")
+        raise ValueError("backtest_config.json5 missing signals")
 
     date_dir = f"{start:%Y-%m-%d}_{end:%Y-%m-%d}"
     batch_id = cfg.get("batch_id", "Backtest")

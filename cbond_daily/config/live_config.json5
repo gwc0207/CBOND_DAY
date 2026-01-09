@@ -1,0 +1,6 @@
+{
+  start: "2025-12-01",
+  end: "2026-01-07",
+  signal_name: "combo_default",
+  batch_id: "Live",
+}

@@ -115,7 +115,7 @@ def _build_factors(
 def _pick_signal(cfg: dict, name: str | None) -> dict:
     signals = cfg.get("signals", [])
     if not signals:
-        raise ValueError("backtest_config.json missing signals")
+        raise ValueError("backtest_config.json5 missing signals")
     if name:
         for signal in signals:
             if signal.get("name") == name:

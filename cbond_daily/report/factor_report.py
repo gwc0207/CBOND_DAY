@@ -307,7 +307,7 @@ def run_factor_report() -> None:
     dws_root = paths_cfg["dws_root"]
     logs_root = paths_cfg.get("results")
     if not logs_root:
-        raise KeyError("missing results in paths_config.json")
+        raise KeyError("missing results in paths_config.json5")
 
     start = parse_date(cfg["start"])
     end = parse_date(cfg["end"])

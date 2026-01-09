@@ -11,9 +11,21 @@ CONFIG_DIR = Path(__file__).resolve().parents[1] / "config"
 
 
 def load_config_file(name: str) -> dict[str, Any]:
-    filename = name if name.endswith("_config.json") else f"{name}_config.json"
-    path = CONFIG_DIR / filename
-    with path.open("r", encoding="utf-8") as handle:
+    base = name if name.endswith("_config") else f"{name}_config"
+    json5_path = CONFIG_DIR / f"{base}.json5"
+    yaml_path = CONFIG_DIR / f"{base}.yaml"
+    json_path = CONFIG_DIR / f"{base}.json"
+    if json5_path.exists():
+        import json5
+
+        with json5_path.open("r", encoding="utf-8") as handle:
+            return json5.load(handle) or {}
+    if yaml_path.exists():
+        import yaml
+
+        with yaml_path.open("r", encoding="utf-8") as handle:
+            return yaml.safe_load(handle) or {}
+    with json_path.open("r", encoding="utf-8") as handle:
         return json.load(handle)
 
 

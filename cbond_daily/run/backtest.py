@@ -51,7 +51,7 @@ def main() -> None:
 
     signals = cfg.get("signals", [])
     if not signals:
-        raise ValueError("backtest_config.json missing signals")
+        raise ValueError("backtest_config.json5 missing signals")
 
     def _run_signal(item: dict) -> dict:
         signal_name = item.get("name") or "signal"

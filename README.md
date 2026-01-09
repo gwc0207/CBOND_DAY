@@ -31,22 +31,22 @@ python -m cbond_daily.run.live_daily
 - factor data：因子结果，路径：`D:/cbond_daily/factor_data/YYYY-MM/YYYYMMDD.parquet`
 - 回测结果：`D:/cbond_daily/results/<start>_<end>/<batch>/<timestamp>/...`
 
-路径配置：`cbond_daily/config/paths_config.json`
+路径配置：`cbond_daily/config/paths_config.json5`
 
 ## 配置入口
 
-- raw data：`cbond_daily/config/raw_data_config.json`
-- cleaned data：`cbond_daily/config/cleaned_data_config.json`
-- 因子计算：`cbond_daily/config/factors_config.json`
-- 单因子批量：`cbond_daily/config/factor_batch_config.json`
-- 多因子回测：`cbond_daily/config/backtest_config.json`
+- raw data：`cbond_daily/config/raw_data_config.json5`
+- cleaned data：`cbond_daily/config/cleaned_data_config.json5`
+- 因子计算：`cbond_daily/config/factors_config.json5`
+- 单因子批量：`cbond_daily/config/factor_batch_config.json5`
+- 多因子回测：`cbond_daily/config/backtest_config.json5`
 
 ## 因子开发
 
 1) 新建或修改因子类，继承 `cbond_daily.factors.base.Factor`
 2) 实现 `compute(self, data: pd.DataFrame) -> pd.Series`
 3) 使用 `@FactorRegistry.register("factor_name")` 注册
-4) 在 `factors_config.json` 中配置参数
+4) 在 `factors_config.json5` 中配置参数
 
 例子：
 ```json
