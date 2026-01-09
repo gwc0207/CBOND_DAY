@@ -147,7 +147,7 @@ def main() -> None:
     paths_cfg = load_config_file("paths")
     raw_cfg = load_config_file("raw_data")
     cleaned_cfg = load_config_file("cleaned_data")
-    factors_cfg = load_config_file("factors")
+    factors_cfg = load_config_file("factor_batch")
     backtest_cfg = load_config_file("backtest")
     live_cfg = load_config_file("live")
 

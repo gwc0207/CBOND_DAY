@@ -151,6 +151,9 @@ def run_backtest(
     position_records: list[dict] = []
     diagnostics: list[dict] = []
     factor_dates = _available_factor_dates(dws_root)
+    total_days = len(pd.date_range(start, end, freq="D"))
+    done = 0
+    last_pct = -1
     for day in pd.date_range(start, end, freq="D"):
         df = read_dwd_daily(dwd_root, day.date())
         if df.empty:
@@ -259,6 +262,11 @@ def run_backtest(
                 }
             )
         result.days += 1
+        done += 1
+        pct = int(done * 100 / total_days) if total_days else 100
+        if pct % 20 == 0 and pct != last_pct:
+            last_pct = pct
+            print(f"backtest progress: {pct}% ({done}/{total_days})")
         diagnostics.append(
             {
                 "trade_date": day.date(),
@@ -324,6 +332,9 @@ def run_backtest_linear(
     weights = manual_weights.copy()
     last_refit_idx: int | None = None
 
+    total_days = len(pd.date_range(start, end, freq="D"))
+    done = 0
+    last_pct = -1
     for idx, day in enumerate(pd.date_range(start, end, freq="D")):
         df = read_dwd_daily(dwd_root, day.date())
         if df.empty:
@@ -515,6 +526,11 @@ def run_backtest_linear(
                 }
             )
         result.days += 1
+        done += 1
+        pct = int(done * 100 / total_days) if total_days else 100
+        if pct % 20 == 0 and pct != last_pct:
+            last_pct = pct
+            print(f"backtest progress: {pct}% ({done}/{total_days})")
         diagnostics.append(
             {
                 "trade_date": day.date(),
