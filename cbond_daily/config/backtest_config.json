@@ -10,7 +10,7 @@
   "ic_bins": 20,
   "max_workers": 10,
   "batch_id": "Backtest",
-  "bin_source": "manual",
+  "bin_source": "auto",
   "bin_top_k": 2,
   "weight_source": "regression",
   "regression_cfg": {
@@ -28,7 +28,7 @@
   "signals": [
     {
       "name": "combo_default",
-      "bin_select": [1,2],
+      "bin_select": [6,7],
       "normalize": "zscore",
       "items": [
         { "name": "intraday_momentum", "params": {}, "w": 1.0 },

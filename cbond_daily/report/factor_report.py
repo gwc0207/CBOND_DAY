@@ -183,15 +183,18 @@ def _render_report(
         else 0.0
     )
 
-    bin_df_all = pd.DataFrame(bin_records)
-    if not bin_df_all.empty:
-        bin_stats = (
-            bin_df_all.groupby("bin")
-            .agg(factor_mean=("factor_mean", "mean"), return_mean=("return_mean", "mean"))
-            .reset_index()
-        )
+    bin_time_df = pd.DataFrame(bin_time_records)
+    if not bin_time_df.empty:
+        pivot = bin_time_df.pivot_table(
+            index="trade_date", columns="bin", values="return_mean", aggfunc="mean"
+        ).sort_index()
+        nav = (1.0 + pivot.fillna(0.0)).cumprod()
+        nav_end = nav.tail(1).T.reset_index()
+        nav_end.columns = ["bin", "nav_end"]
+        nav_end["total_return"] = nav_end["nav_end"] - 1.0
+        bin_stats = nav_end
     else:
-        bin_stats = pd.DataFrame(columns=["bin", "factor_mean", "return_mean"])
+        bin_stats = pd.DataFrame(columns=["bin", "nav_end", "total_return"])
 
     daily_returns_path = out_dir / "daily_returns.csv"
     if daily_returns_path.exists() and daily_returns_path.stat().st_size > 0:
@@ -245,12 +248,7 @@ def _render_report(
     ax.grid(True, axis="y", alpha=0.3)
 
     ax = axes[0, 2]
-    bin_time_df = pd.DataFrame(bin_time_records)
     if not bin_time_df.empty:
-        pivot = bin_time_df.pivot_table(
-            index="trade_date", columns="bin", values="return_mean", aggfunc="mean"
-        ).sort_index()
-        nav = (1.0 + pivot.fillna(0.0)).cumprod()
         colors = plt.cm.viridis(np.linspace(0, 1, len(nav.columns)))
         for color, col in zip(colors, nav.columns):
             ax.plot(
@@ -270,11 +268,11 @@ def _render_report(
 
     ax = axes[1, 0]
     if not bin_stats.empty:
-        ax.scatter(bin_stats["factor_mean"], bin_stats["return_mean"], color="#1F77B4", s=18)
-    ax.set_title("factor_equal_cut (mean)")
-    ax.set_xlabel("Factor Mean in bin")
-    ax.set_ylabel("Return")
-    ax.grid(True, alpha=0.3)
+        ax.bar(bin_stats["bin"].astype(int), bin_stats["total_return"], color="#1F77B4")
+    ax.set_title("Bin total return")
+    ax.set_xlabel("Bin")
+    ax.set_ylabel("Total Return")
+    ax.grid(True, axis="y", alpha=0.3)
 
     ax = axes[1, 1]
     metric_names = ["sharpe", "maxdd", "win_rate", "turnover"]

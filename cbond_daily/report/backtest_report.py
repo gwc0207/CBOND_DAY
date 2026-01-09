@@ -70,6 +70,45 @@ def _prev_available_date(dates: list[date], day: date) -> date | None:
     return dates[idx - 1]
 
 
+def _load_weights_history(out_dir: Path, cols: list[str]) -> tuple[list[date], dict[date, pd.Series]]:
+    path = out_dir / "weights_history.csv"
+    if not path.exists() or path.stat().st_size == 0:
+        return [], {}
+    try:
+        df = pd.read_csv(path, parse_dates=["trade_date"])
+    except pd.errors.EmptyDataError:
+        return [], {}
+    if df.empty or not {"trade_date", "factor", "weight"}.issubset(df.columns):
+        return [], {}
+    df["trade_date"] = pd.to_datetime(df["trade_date"]).dt.date
+    weights_map: dict[date, pd.Series] = {}
+    for day, group in df.groupby("trade_date"):
+        series = pd.Series(group["weight"].astype(float).values, index=group["factor"])
+        series = series.reindex(cols).fillna(0.0)
+        weights_map[day] = series
+    dates = sorted(weights_map)
+    return dates, weights_map
+
+
+def _weights_for_day(
+    day: date,
+    *,
+    weight_dates: list[date],
+    weights_map: dict[date, pd.Series],
+    default_weights: pd.Series,
+) -> pd.Series:
+    if not weight_dates:
+        return default_weights
+    idx = bisect_left(weight_dates, day)
+    if idx == 0:
+        return weights_map[weight_dates[0]]
+    if idx >= len(weight_dates):
+        return weights_map[weight_dates[-1]]
+    if weight_dates[idx] == day:
+        return weights_map[weight_dates[idx]]
+    return weights_map[weight_dates[idx - 1]]
+
+
 def _calc_turnover(positions: pd.DataFrame) -> float:
     if positions.empty:
         return 0.0
@@ -122,7 +161,8 @@ def _render_report(
 
     factor_dates = _available_factor_dates(dws_root)
     cols = [item["col"] for item in factor_items]
-    weights = pd.Series([item["w"] for item in factor_items], index=cols, dtype=float)
+    static_weights = pd.Series([item["w"] for item in factor_items], index=cols, dtype=float)
+    weight_dates, weights_map = _load_weights_history(out_dir, cols)
 
     for day in pd.date_range(start, end, freq="D"):
         df = read_dwd_daily(dwd_root, day.date())
@@ -151,6 +191,12 @@ def _render_report(
         ]
         if tradable.empty:
             continue
+        weights = _weights_for_day(
+            day.date(),
+            weight_dates=weight_dates,
+            weights_map=weights_map,
+            default_weights=static_weights,
+        )
         work = tradable[cols].copy().apply(_zscore)
         valid_mask = work.notna()
         denom = valid_mask.mul(weights.abs(), axis=1).sum(axis=1)
@@ -211,15 +257,18 @@ def _render_report(
         else 0.0
     )
 
-    bin_df_all = pd.DataFrame(bin_records)
-    if not bin_df_all.empty:
-        bin_stats = (
-            bin_df_all.groupby("bin")
-            .agg(factor_mean=("factor_mean", "mean"), return_mean=("return_mean", "mean"))
-            .reset_index()
-        )
+    bin_time_df = pd.DataFrame(bin_time_records)
+    if not bin_time_df.empty:
+        pivot = bin_time_df.pivot_table(
+            index="trade_date", columns="bin", values="return_mean", aggfunc="mean"
+        ).sort_index()
+        nav = (1.0 + pivot.fillna(0.0)).cumprod()
+        nav_end = nav.tail(1).T.reset_index()
+        nav_end.columns = ["bin", "nav_end"]
+        nav_end["total_return"] = nav_end["nav_end"] - 1.0
+        bin_stats = nav_end
     else:
-        bin_stats = pd.DataFrame(columns=["bin", "factor_mean", "return_mean"])
+        bin_stats = pd.DataFrame(columns=["bin", "nav_end", "total_return"])
 
     daily_returns_path = out_dir / "daily_returns.csv"
     if daily_returns_path.exists() and daily_returns_path.stat().st_size > 0:
@@ -273,12 +322,7 @@ def _render_report(
     ax.grid(True, axis="y", alpha=0.3)
 
     ax = axes[0, 2]
-    bin_time_df = pd.DataFrame(bin_time_records)
     if not bin_time_df.empty:
-        pivot = bin_time_df.pivot_table(
-            index="trade_date", columns="bin", values="return_mean", aggfunc="mean"
-        ).sort_index()
-        nav = (1.0 + pivot.fillna(0.0)).cumprod()
         colors = plt.cm.viridis(np.linspace(0, 1, len(nav.columns)))
         for color, col in zip(colors, nav.columns):
             ax.plot(
@@ -298,11 +342,11 @@ def _render_report(
 
     ax = axes[1, 0]
     if not bin_stats.empty:
-        ax.scatter(bin_stats["factor_mean"], bin_stats["return_mean"], color="#1F77B4", s=18)
-    ax.set_title("factor_equal_cut (mean)")
-    ax.set_xlabel("Factor Mean in bin")
-    ax.set_ylabel("Return")
-    ax.grid(True, alpha=0.3)
+        ax.bar(bin_stats["bin"].astype(int), bin_stats["total_return"], color="#1F77B4")
+    ax.set_title("Bin total return")
+    ax.set_xlabel("Bin")
+    ax.set_ylabel("Total Return")
+    ax.grid(True, axis="y", alpha=0.3)
 
     ax = axes[1, 1]
     metric_names = ["sharpe", "maxdd", "win_rate", "turnover"]

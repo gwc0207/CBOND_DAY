@@ -129,6 +129,21 @@ def get_latest_dwd_date(root: str | Path) -> date | None:
     return latest
 
 
+def get_latest_dws_date(root: str | Path) -> date | None:
+    base = Path(root)
+    if not base.exists():
+        return None
+    latest: date | None = None
+    for path in base.glob("**/*.parquet"):
+        try:
+            day = datetime.strptime(path.stem, "%Y%m%d").date()
+        except ValueError:
+            continue
+        if latest is None or day > latest:
+            latest = day
+    return latest
+
+
 def write_dws_factors_by_date(
     df: pd.DataFrame,
     root: str | Path,
