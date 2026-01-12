@@ -21,9 +21,9 @@
   },
   signals: [
     { name: "combo_default", bin_select: [18,8], normalize: "zscore", items: [
-      { name: "intraday_momentum", params: {}, w: 1.0 },
+      // { name: "intraday_momentum", params: {}, w: 1.0 },
       { name: "liquidity", params: {}, w: 1.0 },
-      { name: "mser", params: { ema_span: 20, mean_window: 9 }, w: 1.0 },
+      // { name: "mser", params: { ema_span: 20, mean_window: 9 }, w: 1.0 },
       {"name":"trend_prem_lag_simple","params":{"mom_win":20,"prem_chg_win":5,"liq_rank_min":0.5}, w: 1.0}
     ] },
   ],

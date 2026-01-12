@@ -102,6 +102,7 @@ def _build_cleaned_data(
 
 def _build_factors(
     *,
+    ods_root: str,
     dwd_root: str,
     dws_root: str,
     start: date,
@@ -217,7 +218,6 @@ def main() -> None:
     paths_cfg = load_config_file("paths")
     raw_cfg = load_config_file("raw_data")
     cleaned_cfg = load_config_file("cleaned_data")
-    factors_cfg = load_config_file("factor_batch")
     backtest_cfg = load_config_file("backtest")
     live_cfg = load_config_file("live")
 
@@ -242,7 +242,7 @@ def main() -> None:
         ods_root=ods_root,
         start=start,
         end=signal_day,
-        full_refresh=bool(raw_cfg.get("full_refresh", False)),
+        full_refresh=bool(live_cfg.get("raw_full_refresh", False)),
         tables=raw_cfg.get("sync_tables", []),
     )
     _build_cleaned_data(
@@ -250,18 +250,19 @@ def main() -> None:
         dwd_root=dwd_root,
         start=start,
         end=signal_day,
-        full_refresh=bool(cleaned_cfg.get("full_refresh", False)),
+        full_refresh=bool(live_cfg.get("cleaned_full_refresh", False)),
         primary_table=cleaned_cfg["primary_table"],
         merge_tables=cleaned_cfg["merge_tables"],
     )
     _build_factors(
+        ods_root=ods_root,
         dwd_root=dwd_root,
         dws_root=dws_root,
         start=start,
         end=signal_day,
-        factor_defs=factors_cfg.get("factors", []),
-        overwrite=bool(factors_cfg.get("overwrite", False)),
-        update_only=factors_cfg.get("update_only"),
+        factor_defs=live_cfg.get("factors", []),
+        overwrite=bool(live_cfg.get("factors_overwrite", False)),
+        update_only=live_cfg.get("factors_update_only"),
     )
 
     signal = _pick_signal(backtest_cfg, signal_name)
