@@ -79,6 +79,7 @@ def _plot_nav_compare(nav_map: dict[str, pd.DataFrame], out_path: Path) -> None:
 
 def run_factor_batch(
     *,
+    ods_root: str,
     dwd_root: str,
     dws_root: str,
     logs_root: str,
@@ -109,6 +110,7 @@ def run_factor_batch(
         signal_dir = try_dir / factor_name / params_str
 
         result = run_backtest(
+            ods_root,
             dwd_root,
             dws_root,
             start,

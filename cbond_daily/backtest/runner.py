@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
-from bisect import bisect_left
+from bisect import bisect_left, bisect_right
 from pathlib import Path
 
 import pandas as pd
 import numpy as np
 
-from cbond_daily.data.io import read_dwd_daily, read_dws_factors_daily
+from cbond_daily.data.io import read_dwd_daily, read_dws_factors_daily, read_trading_calendar
 from .execution import apply_twap_bps
 from .weight_fit import fit_linear_weights
 
@@ -43,17 +43,47 @@ def _prev_available_date(dates: list[date], day: date) -> date | None:
     return dates[idx - 1]
 
 
-def _available_dwd_dates(dwd_root: str) -> list[date]:
-    base = Path(dwd_root)
-    dates: list[date] = []
-    for path in base.glob("*/*.parquet"):
-        try:
-            day = datetime.strptime(path.stem, "%Y%m%d").date()
-        except ValueError:
-            continue
-        dates.append(day)
-    dates.sort()
-    return dates
+def _load_trading_days(ods_root: str) -> list[date]:
+    cal = read_trading_calendar(ods_root)
+    if cal.empty:
+        raise ValueError("trading_calendar is empty; sync raw_data first")
+    if "calendar_date" not in cal.columns:
+        raise KeyError("trading_calendar missing calendar_date column")
+    if "is_open" in cal.columns:
+        cal = cal[cal["is_open"].astype(bool)]
+    days = pd.to_datetime(cal["calendar_date"]).dt.date.dropna().unique().tolist()
+    days.sort()
+    return days
+
+
+def _align_start_end(trading_days: list[date], start: date, end: date) -> tuple[date, date]:
+    if start not in trading_days:
+        idx = bisect_right(trading_days, start)
+        if idx >= len(trading_days):
+            raise ValueError(f"start date {start} is after last trading day")
+        start = trading_days[idx]
+    if end not in trading_days:
+        idx = bisect_left(trading_days, end) - 1
+        if idx < 0:
+            raise ValueError(f"end date {end} is before first trading day")
+        end = trading_days[idx]
+    if end < start:
+        raise ValueError(f"end date {end} is before start date {start}")
+    return start, end
+
+
+def _load_dwd_cache(dwd_root: str, days: list[date]) -> dict[date, pd.DataFrame]:
+    cache: dict[date, pd.DataFrame] = {}
+    for day in days:
+        cache[day] = read_dwd_daily(dwd_root, day)
+    return cache
+
+
+def _load_factor_cache(dws_root: str, days: list[date]) -> dict[date, pd.DataFrame]:
+    cache: dict[date, pd.DataFrame] = {}
+    for day in days:
+        cache[day] = read_dws_factors_daily(dws_root, day)
+    return cache
 
 
 def _select_bins_by_mean_return(
@@ -132,6 +162,7 @@ def _select_bins_by_mean_return(
     return [b for b, _ in ranked]
 
 def run_backtest(
+    ods_root: str,
     dwd_root: str,
     dws_root: str,
     start: date,
@@ -151,31 +182,38 @@ def run_backtest(
     position_records: list[dict] = []
     diagnostics: list[dict] = []
     factor_dates = _available_factor_dates(dws_root)
-    total_days = len(pd.date_range(start, end, freq="D"))
+    trading_days = _load_trading_days(ods_root)
+    start, end = _align_start_end(trading_days, start, end)
+    day_list = [d for d in trading_days if start <= d <= end]
+    dwd_cache = _load_dwd_cache(dwd_root, day_list)
+    factor_day_map = {day: _prev_available_date(factor_dates, day) for day in day_list}
+    factor_cache_days = sorted({d for d in factor_day_map.values() if d is not None})
+    factor_cache = _load_factor_cache(dws_root, factor_cache_days)
+    total_days = len(day_list)
     done = 0
     last_pct = -1
-    for day in pd.date_range(start, end, freq="D"):
-        df = read_dwd_daily(dwd_root, day.date())
+    for day_date in day_list:
+        df = dwd_cache.get(day_date, pd.DataFrame())
         if df.empty:
-            diagnostics.append({"trade_date": day.date(), "status": "skip", "reason": "missing_dwd"})
+            diagnostics.append({"trade_date": day_date, "status": "skip", "reason": "missing_dwd"})
             continue
-        factor_day = _prev_available_date(factor_dates, day.date())
+        factor_day = factor_day_map.get(day_date)
         if factor_day is None:
-            diagnostics.append({"trade_date": day.date(), "status": "skip", "reason": "missing_factor"})
+            diagnostics.append({"trade_date": day_date, "status": "skip", "reason": "missing_factor"})
             continue
-        factors = read_dws_factors_daily(dws_root, factor_day)
+        factors = factor_cache.get(factor_day, pd.DataFrame())
         if factors.empty:
-            diagnostics.append({"trade_date": day.date(), "status": "skip", "reason": "missing_factor"})
+            diagnostics.append({"trade_date": day_date, "status": "skip", "reason": "missing_factor"})
             continue
         if "code" not in factors.columns:
             raise KeyError("missing code column in factor data")
         if "trade_date" not in df.columns:
-            df["trade_date"] = day.date()
+            df["trade_date"] = day_date
         factor_cols = [c for c in factors.columns if c != "trade_date"]
         merged = df.merge(factors[factor_cols], on="code", how="left")
         if factor_col not in merged.columns:
             diagnostics.append(
-                {"trade_date": day.date(), "status": "skip", "reason": "factor_col_missing"}
+                {"trade_date": day_date, "status": "skip", "reason": "factor_col_missing"}
             )
             continue
         missing_cols = [c for c in (buy_twap_col, sell_twap_col) if c not in merged.columns]
@@ -188,7 +226,7 @@ def run_backtest(
             & (merged[sell_twap_col] > 0)
         ]
         if tradable.empty:
-            diagnostics.append({"trade_date": day.date(), "status": "skip", "reason": "no_tradable"})
+            diagnostics.append({"trade_date": day_date, "status": "skip", "reason": "no_tradable"})
             continue
         if bin_select is None:
             raise ValueError("bin_select is required for bin-based selection")
@@ -218,7 +256,7 @@ def run_backtest(
         if len(picks) < min_count:
             diagnostics.append(
                 {
-                    "trade_date": day.date(),
+                    "trade_date": day_date,
                     "status": "skip",
                     "reason": "min_count_not_met",
                     "picked": int(len(picks)),
@@ -240,7 +278,7 @@ def run_backtest(
         bench_day_return = float((bench_returns * bench_weight).sum())
         daily_records.append(
             {
-                "trade_date": day.date(),
+                "trade_date": day_date,
                 "count": int(len(picks)),
                 "avg_return": float(returns.mean()),
                 "day_return": day_return,
@@ -252,7 +290,7 @@ def run_backtest(
         for idx, row in picks.iterrows():
             position_records.append(
                 {
-                    "trade_date": day.date(),
+                    "trade_date": day_date,
                     "code": row["code"],
                     "factor": float(row[factor_col]) if pd.notna(row[factor_col]) else None,
                     "weight": weight,
@@ -269,7 +307,7 @@ def run_backtest(
             print(f"backtest progress: {pct}% ({done}/{total_days})")
         diagnostics.append(
             {
-                "trade_date": day.date(),
+                "trade_date": day_date,
                 "status": "ok",
                 "reason": "",
                 "bin_used": ",".join(str(x) for x in effective_bins),
@@ -301,6 +339,7 @@ def _zscore(series: pd.Series) -> pd.Series:
 
 def run_backtest_linear(
     *,
+    ods_root: str,
     dwd_root: str,
     dws_root: str,
     start: date,
@@ -325,38 +364,44 @@ def run_backtest_linear(
     position_records: list[dict] = []
     diagnostics: list[dict] = []
     factor_dates = _available_factor_dates(dws_root)
-    dwd_dates = _available_dwd_dates(dwd_root)
+    trading_days = _load_trading_days(ods_root)
+    start, end = _align_start_end(trading_days, start, end)
+    day_list = [d for d in trading_days if start <= d <= end]
+    dwd_cache = _load_dwd_cache(dwd_root, day_list)
+    factor_day_map = {day: _prev_available_date(factor_dates, day) for day in day_list}
+    factor_cache_days = sorted({d for d in factor_day_map.values() if d is not None})
+    factor_cache = _load_factor_cache(dws_root, factor_cache_days)
 
     cols = [item["col"] for item in factor_items]
     manual_weights = pd.Series([item["w"] for item in factor_items], index=cols, dtype=float)
     weights = manual_weights.copy()
     last_refit_idx: int | None = None
 
-    total_days = len(pd.date_range(start, end, freq="D"))
+    total_days = len(day_list)
     done = 0
     last_pct = -1
-    for idx, day in enumerate(pd.date_range(start, end, freq="D")):
-        df = read_dwd_daily(dwd_root, day.date())
+    for idx, day_date in enumerate(day_list):
+        df = dwd_cache.get(day_date, pd.DataFrame())
         if df.empty:
-            diagnostics.append({"trade_date": day.date(), "status": "skip", "reason": "missing_dwd"})
+            diagnostics.append({"trade_date": day_date, "status": "skip", "reason": "missing_dwd"})
             continue
-        factor_day = _prev_available_date(factor_dates, day.date())
+        factor_day = factor_day_map.get(day_date)
         if factor_day is None:
-            diagnostics.append({"trade_date": day.date(), "status": "skip", "reason": "missing_factor"})
+            diagnostics.append({"trade_date": day_date, "status": "skip", "reason": "missing_factor"})
             continue
-        factors = read_dws_factors_daily(dws_root, factor_day)
+        factors = factor_cache.get(factor_day, pd.DataFrame())
         if factors.empty:
-            diagnostics.append({"trade_date": day.date(), "status": "skip", "reason": "missing_factor"})
+            diagnostics.append({"trade_date": day_date, "status": "skip", "reason": "missing_factor"})
             continue
         if "code" not in factors.columns:
             raise KeyError("missing code column in factor data")
         if "trade_date" not in df.columns:
-            df["trade_date"] = day.date()
+            df["trade_date"] = day_date
         missing_factor_cols = [c for c in cols if c not in factors.columns]
         if missing_factor_cols:
             diagnostics.append(
                 {
-                    "trade_date": day.date(),
+                    "trade_date": day_date,
                     "status": "skip",
                     "reason": "factor_col_missing",
                     "missing": ",".join(missing_factor_cols),
@@ -374,7 +419,7 @@ def run_backtest_linear(
             & (merged[sell_twap_col] > 0)
         ]
         if tradable.empty:
-            diagnostics.append({"trade_date": day.date(), "status": "skip", "reason": "no_tradable"})
+            diagnostics.append({"trade_date": day_date, "status": "skip", "reason": "no_tradable"})
             continue
         if weight_source == "regression":
             cfg = regression_cfg or {}
@@ -382,7 +427,7 @@ def run_backtest_linear(
             refit_freq = int(cfg.get("refit_freq", 1))
             need_refit = last_refit_idx is None or (idx - last_refit_idx) >= refit_freq
             if need_refit:
-                train_days = [d for d in dwd_dates if d < day.date()][-lookback_days:]
+                train_days = [d for d in trading_days if d < day_date][-lookback_days:]
                 label_cfg = {
                     "buy_twap_col": buy_twap_col,
                     "sell_twap_col": sell_twap_col,
@@ -413,16 +458,16 @@ def run_backtest_linear(
                     denom = weights.abs().sum()
                     if denom > 0:
                         weights = weights / denom
-                if weights_output_dir is not None:
-                    weights_output_dir.mkdir(parents=True, exist_ok=True)
-                    out_path = weights_output_dir / "weights_history.csv"
-                    out_df = pd.DataFrame(
-                        {
-                            "trade_date": [day.date()] * len(weights),
-                            "factor": weights.index,
-                            "weight": weights.values,
-                        }
-                    )
+                    if weights_output_dir is not None:
+                        weights_output_dir.mkdir(parents=True, exist_ok=True)
+                        out_path = weights_output_dir / "weights_history.csv"
+                        out_df = pd.DataFrame(
+                            {
+                                "trade_date": [day_date] * len(weights),
+                                "factor": weights.index,
+                                "weight": weights.values,
+                            }
+                        )
                     header = not out_path.exists()
                     out_df.to_csv(out_path, index=False, mode="a", header=header)
                 last_refit_idx = idx
@@ -451,7 +496,7 @@ def run_backtest_linear(
         composite = weighted.where(denom > 0).div(denom)
         if composite.isna().all():
             diagnostics.append(
-                {"trade_date": day.date(), "status": "skip", "reason": "composite_all_nan"}
+                {"trade_date": day_date, "status": "skip", "reason": "composite_all_nan"}
             )
             continue
         tradable = tradable.copy()
@@ -480,7 +525,7 @@ def run_backtest_linear(
         if len(picks) < min_count:
             diagnostics.append(
                 {
-                    "trade_date": day.date(),
+                    "trade_date": day_date,
                     "status": "skip",
                     "reason": "min_count_not_met",
                     "picked": int(len(picks)),
@@ -502,7 +547,7 @@ def run_backtest_linear(
         bench_day_return = float((bench_returns * bench_weight).sum())
         daily_records.append(
             {
-                "trade_date": day.date(),
+                "trade_date": day_date,
                 "count": int(len(picks)),
                 "avg_return": float(returns.mean()),
                 "day_return": day_return,
@@ -514,7 +559,7 @@ def run_backtest_linear(
         for idx, row in picks.iterrows():
             position_records.append(
                 {
-                    "trade_date": day.date(),
+                    "trade_date": day_date,
                     "code": row["code"],
                     "factor": float(row["composite_factor"])
                     if pd.notna(row["composite_factor"])
@@ -533,7 +578,7 @@ def run_backtest_linear(
             print(f"backtest progress: {pct}% ({done}/{total_days})")
         diagnostics.append(
             {
-                "trade_date": day.date(),
+                "trade_date": day_date,
                 "status": "ok",
                 "reason": "",
                 "bin_used": ",".join(str(x) for x in bin_select),

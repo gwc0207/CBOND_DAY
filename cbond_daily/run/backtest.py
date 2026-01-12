@@ -70,6 +70,7 @@ def main() -> None:
 
         out_dir = run_dir / signal_name
         result = run_backtest_linear(
+            ods_root=paths_cfg["ods_root"],
             dwd_root=paths_cfg["dwd_root"],
             dws_root=paths_cfg["dws_root"],
             start=start,

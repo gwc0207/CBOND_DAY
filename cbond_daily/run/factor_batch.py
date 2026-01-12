@@ -69,6 +69,7 @@ def main() -> None:
         )
 
     run_factor_batch(
+        ods_root=paths_cfg["ods_root"],
         dwd_root=paths_cfg["dwd_root"],
         dws_root=paths_cfg["dws_root"],
         logs_root=paths_cfg["results"],

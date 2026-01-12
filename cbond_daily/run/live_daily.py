@@ -258,6 +258,7 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     result = run_backtest_linear(
+        ods_root=ods_root,
         dwd_root=dwd_root,
         dws_root=dws_root,
         start=end,
