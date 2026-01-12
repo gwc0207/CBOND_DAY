@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from typing import Iterable, Sequence
+from bisect import bisect_right
 
 import pandas as pd
 
@@ -26,6 +27,15 @@ def _load_trading_days(ods_root: str) -> list[date]:
     days = pd.to_datetime(cal["calendar_date"]).dt.date.dropna().unique().tolist()
     days.sort()
     return days
+
+
+def _align_to_next_trading_day(trading_days: list[date], day: date, label: str) -> date:
+    if day in trading_days:
+        return day
+    idx = bisect_right(trading_days, day)
+    if idx >= len(trading_days):
+        raise ValueError(f"{label} {day} is after last trading day")
+    return trading_days[idx]
 
 
 def run_factor_pipeline(
@@ -64,13 +74,13 @@ def run_factor_pipeline(
         return
 
     trading_days = _load_trading_days(ods_root)
+    start = _align_to_next_trading_day(trading_days, start, "start date")
+    end = _align_to_next_trading_day(trading_days, end, "end date")
+    if end < start:
+        raise ValueError(f"end date {end} is before start date {start}")
     target_days = [d for d in trading_days if start <= d <= end]
     if not target_days:
         raise ValueError("no trading days in requested range")
-    if start not in trading_days:
-        raise ValueError(f"start date {start} is not a trading day")
-    if end not in trading_days:
-        raise ValueError(f"end date {end} is not a trading day")
 
     max_lookback = max(item["lookback"] for item in factor_items)
     start_idx = trading_days.index(start)
