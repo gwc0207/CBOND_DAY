@@ -17,6 +17,7 @@ from cbond_daily.data.io import (
     get_latest_dwd_date,
     get_latest_dws_date,
     get_latest_table_date,
+    read_trading_calendar,
     table_has_data,
     write_table_by_date,
 )
@@ -25,12 +26,25 @@ from cbond_daily.backtest.runner import run_backtest_linear
 from cbond_daily.core.naming import build_factor_col
 
 
-def _parse_end(value: str | date) -> date:
+def _parse_target(value: str | date) -> date:
     if isinstance(value, date):
         return value
     if isinstance(value, str) and value.lower() == "today":
         return pd.Timestamp.today().date()
     return parse_date(value)
+
+
+def _load_trading_days(ods_root: str) -> list[date]:
+    cal = read_trading_calendar(ods_root)
+    if cal.empty:
+        raise ValueError("trading_calendar is empty; sync raw_data first")
+    if "calendar_date" not in cal.columns:
+        raise KeyError("trading_calendar missing calendar_date column")
+    if "is_open" in cal.columns:
+        cal = cal[cal["is_open"].astype(bool)]
+    days = pd.to_datetime(cal["calendar_date"]).dt.date.dropna().unique().tolist()
+    days.sort()
+    return days
 
 
 def _sync_raw_data(
@@ -208,19 +222,26 @@ def main() -> None:
     live_cfg = load_config_file("live")
 
     start = parse_date(live_cfg["start"])
-    end = _parse_end(live_cfg.get("end", "today"))
-    trade_day = end + timedelta(days=1)
+    target = _parse_target(live_cfg.get("target", "today"))
     signal_name = live_cfg.get("signal_name")
     batch_id = live_cfg.get("batch_id", "Live")
 
     ods_root = paths_cfg["ods_root"]
     dwd_root = paths_cfg["dwd_root"]
     dws_root = paths_cfg["dws_root"]
+    trading_days = _load_trading_days(ods_root)
+    if target not in trading_days:
+        raise ValueError(f"target date {target} is not a trading day")
+    target_idx = trading_days.index(target)
+    if target_idx <= 0:
+        raise ValueError(f"no prior trading day available for target {target}")
+    signal_day = trading_days[target_idx - 1]
+    trade_day = target
 
     _sync_raw_data(
         ods_root=ods_root,
         start=start,
-        end=end,
+        end=signal_day,
         full_refresh=bool(raw_cfg.get("full_refresh", False)),
         tables=raw_cfg.get("sync_tables", []),
     )
@@ -228,7 +249,7 @@ def main() -> None:
         ods_root=ods_root,
         dwd_root=dwd_root,
         start=start,
-        end=end,
+        end=signal_day,
         full_refresh=bool(cleaned_cfg.get("full_refresh", False)),
         primary_table=cleaned_cfg["primary_table"],
         merge_tables=cleaned_cfg["merge_tables"],
@@ -237,7 +258,7 @@ def main() -> None:
         dwd_root=dwd_root,
         dws_root=dws_root,
         start=start,
-        end=end,
+        end=signal_day,
         factor_defs=factors_cfg.get("factors", []),
         overwrite=bool(factors_cfg.get("overwrite", False)),
         update_only=factors_cfg.get("update_only"),
@@ -261,8 +282,8 @@ def main() -> None:
         ods_root=ods_root,
         dwd_root=dwd_root,
         dws_root=dws_root,
-        start=end,
-        end=end,
+        start=signal_day,
+        end=signal_day,
         factor_items=factor_items,
         buy_twap_col=backtest_cfg["buy_twap_col"],
         sell_twap_col=backtest_cfg["sell_twap_col"],
