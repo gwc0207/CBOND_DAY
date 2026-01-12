@@ -1,6 +1,9 @@
 {
   start: "2025-12-01",
-  end: "2026-01-07",
+  end: "2026-01-09",
   signal_name: "combo_default",
   batch_id: "Live",
+  db_write: true,
+  db_table: "researcher_gswzif.o_0005",
+  db_mode: "replace_date",
 }

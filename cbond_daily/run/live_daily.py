@@ -12,7 +12,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from cbond_daily.core.config import load_config_file, parse_date
 from cbond_daily.data.dwd_builder import build_dwd_daily
-from cbond_daily.data.extract import DATE_COLUMNS, fetch_table
+from cbond_daily.data.extract import DATE_COLUMNS, connect, fetch_table
 from cbond_daily.data.io import (
     get_latest_dwd_date,
     get_latest_dws_date,
@@ -143,6 +143,60 @@ def _write_trades(out_dir: Path, positions: pd.DataFrame, trade_day: date) -> No
     trades.to_csv(out_dir / "trade_list.csv", index=False)
 
 
+def _write_trades_to_db(
+    *,
+    trades: pd.DataFrame,
+    trade_day: date,
+    table: str,
+    mode: str = "replace_date",
+) -> None:
+    if trades is None or trades.empty:
+        return
+    if "code" not in trades.columns:
+        raise ValueError("trade_list missing code column")
+
+    work = trades.copy()
+    if "trade_date" in work.columns:
+        work["trade_date"] = trade_day
+
+    parts = work["code"].astype(str).str.split(".", n=1, expand=True)
+    if parts.shape[1] != 2:
+        raise ValueError("code must be in instrument.exchange format, e.g. 110084.SH")
+    work["instrument_code"] = parts[0]
+    work["exchange_code"] = parts[1]
+
+    if "weight" not in work.columns:
+        work["weight"] = None
+    if "factor_value" not in work.columns:
+        work["factor_value"] = None
+    if "rank" not in work.columns:
+        work["rank"] = None
+
+    cols = [
+        "instrument_code",
+        "exchange_code",
+        "trade_date",
+        "factor_value",
+        "weight",
+        "rank",
+    ]
+    payload = work[cols]
+
+    insert_sql = (
+        f"INSERT INTO {table} "
+        "(instrument_code, exchange_code, trade_date, factor_value, weight, rank) "
+        "VALUES (?, ?, ?, ?, ?, ?)"
+    )
+
+    with connect() as conn:
+        cursor = conn.cursor()
+        if mode == "replace_date":
+            cursor.execute(f"DELETE FROM {table} WHERE trade_date = ?", trade_day)
+        cursor.fast_executemany = True
+        cursor.executemany(insert_sql, payload.values.tolist())
+        conn.commit()
+
+
 def main() -> None:
     paths_cfg = load_config_file("paths")
     raw_cfg = load_config_file("raw_data")
@@ -224,6 +278,13 @@ def main() -> None:
 
     if result.positions is not None:
         _write_trades(out_dir, result.positions, trade_day)
+        if live_cfg.get("db_write", False):
+            _write_trades_to_db(
+                trades=result.positions,
+                trade_day=trade_day,
+                table=live_cfg["db_table"],
+                mode=live_cfg.get("db_mode", "replace_date"),
+            )
     if result.diagnostics is not None:
         result.diagnostics.to_csv(out_dir / "diagnostics.csv", index=False)
 
