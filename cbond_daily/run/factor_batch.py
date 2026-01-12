@@ -58,6 +58,7 @@ def main() -> None:
 
     if bool(exp_cfg.get("write_factors", True)):
         run_factor_pipeline(
+            paths_cfg["ods_root"],
             paths_cfg["dwd_root"],
             paths_cfg["dws_root"],
             start,

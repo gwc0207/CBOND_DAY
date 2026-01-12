@@ -63,6 +63,10 @@ def read_table_all(root: str | Path, table: str) -> pd.DataFrame:
     return pd.read_parquet(path)
 
 
+def read_trading_calendar(root: str | Path) -> pd.DataFrame:
+    return read_table_all(root, "metadata.trading_calendar")
+
+
 def write_dwd_by_date(
     df: pd.DataFrame,
     root: str | Path,

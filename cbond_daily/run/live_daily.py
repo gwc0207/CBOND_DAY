@@ -102,6 +102,7 @@ def _build_factors(
         if start > end:
             return
     run_factor_pipeline(
+        ods_root,
         dwd_root,
         dws_root,
         start,
