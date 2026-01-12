@@ -82,6 +82,7 @@ def _build_cleaned_data(
         end,
         primary_table=primary_table,
         merge_tables=merge_tables,
+        table_schemas=cleaned_cfg.get("table_schemas"),
     )
 
 

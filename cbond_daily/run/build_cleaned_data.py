@@ -37,6 +37,7 @@ def main() -> None:
         end,
         primary_table=cleaned_cfg["primary_table"],
         merge_tables=cleaned_cfg["merge_tables"],
+        table_schemas=cleaned_cfg.get("table_schemas"),
     )
 
 
