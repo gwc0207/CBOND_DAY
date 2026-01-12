@@ -1,6 +1,6 @@
 {
   start: "2025-01-01",
-  end: "2025-12-31",
+  end: "2026-1-12",
   min_count: 10,
   max_weight: 0.05,
   buy_twap_col: "twap_0930_1000",
@@ -10,7 +10,7 @@
   ic_bins: 20,
   max_workers: 10,
   batch_id: "Backtest",
-  bin_source: "auto",
+  bin_source: "manual",
   bin_top_k: 2,
   weight_source: "regression",
   regression_cfg: { 
@@ -21,9 +21,11 @@
   },
   signals: [
     { name: "combo_default", bin_select: [18,8], normalize: "zscore", items: [
-      // { name: "intraday_momentum", params: {}, w: 1.0 },
+      { name: "intraday_momentum", params: {}, w: 1.0 },
       { name: "liquidity", params: {}, w: 1.0 },
-      // { name: "mser", params: { ema_span: 20, mean_window: 9 }, w: 1.0 },
+      { name: "conv_premium", params: {}, w: 1.0 },
+      { name: "expr_alpha_001", params: { max_ret_win: 15, mdm1_win: 8, wma1_win: 20, mdm2_win: 6, max2_win: 60, delta_win: 9 } , w: 1.0 },
+      { name: "mser", params: { ema_span: 20, mean_window: 9 }, w: 1.0 },
       {"name":"trend_prem_lag_simple","params":{"mom_win":20,"prem_chg_win":5,"liq_rank_min":0.5}, w: 1.0}
     ] },
   ],

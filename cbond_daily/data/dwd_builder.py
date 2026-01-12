@@ -43,6 +43,8 @@ def build_dwd_daily(
         if other.empty:
             continue
         other = _standardize_daily(other, schema)
+        if "code" in other.columns:
+            other = other.drop(columns=["code"])
         if table == "metadata.cbond_info":
             other = other.drop_duplicates(subset=["instrument_code", "exchange_code"])
             merged = merged.merge(other, on=["instrument_code", "exchange_code"], how="left")

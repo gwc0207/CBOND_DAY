@@ -82,6 +82,7 @@ def _build_cleaned_data(
     full_refresh: bool,
     primary_table: str,
     merge_tables: list[str],
+    table_schemas: dict | None,
 ) -> None:
     if not full_refresh:
         last_date = get_latest_dwd_date(dwd_root)
@@ -96,7 +97,7 @@ def _build_cleaned_data(
         end,
         primary_table=primary_table,
         merge_tables=merge_tables,
-        table_schemas=cleaned_cfg.get("table_schemas"),
+        table_schemas=table_schemas,
     )
 
 
@@ -185,7 +186,10 @@ def _write_trades_to_db(
     if "weight" not in work.columns:
         work["weight"] = None
     if "factor_value" not in work.columns:
-        work["factor_value"] = None
+        if "factor" in work.columns:
+            work["factor_value"] = work["factor"]
+        else:
+            work["factor_value"] = None
     if "rank" not in work.columns:
         work["rank"] = None
 
@@ -253,6 +257,7 @@ def main() -> None:
         full_refresh=bool(live_cfg.get("cleaned_full_refresh", False)),
         primary_table=cleaned_cfg["primary_table"],
         merge_tables=cleaned_cfg["merge_tables"],
+        table_schemas=cleaned_cfg.get("table_schemas"),
     )
     _build_factors(
         ods_root=ods_root,
