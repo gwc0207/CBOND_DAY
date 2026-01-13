@@ -1,6 +1,6 @@
 {
-  start: "2024-01-01",
-  end: "2026-1-12",
+  start: "2025-01-01",
+  end: "2026-01-12",
   min_count: 10,
   max_weight: 0.05,
   buy_twap_col: "twap_0945_1000",
@@ -26,7 +26,14 @@
       { name: "conv_premium", params: {}, w: 1.0 },
       { name: "expr_alpha_001", params: { max_ret_win: 15, mdm1_win: 8, wma1_win: 20, mdm2_win: 6, max2_win: 60, delta_win: 9 } , w: 1.0 },
       { name: "mser", params: { ema_span: 20, mean_window: 9 }, w: 1.0 },
-      {"name":"trend_prem_lag_simple","params":{"mom_win":20,"prem_chg_win":5,"liq_rank_min":0.5}, w: 1.0}
-    ] },
+      {"name":"trend_prem_lag_simple","params":{"mom_win":20,"prem_chg_win":5,"liq_rank_min":0.5}, w: 1.0},
+      { name: "rolling_ret_vol", params: { window: 7 }, w: 1.0 },
+      { name: "rolling_ret_vol", params: { window: 14 }, w: 1.0 },
+      { name: "rolling_ret_vol", params: { window: 28 }, w: 1.0 },
+      { name: "rolling_max_drawdown", params: { window: 7 }, w: 1.0 },
+      { name: "rolling_max_drawdown", params: { window: 14 }, w: 1.0 },
+      { name: "rolling_max_drawdown", params: { window: 28 }, w: 1.0 },
+      
+    ] }
   ],
 }

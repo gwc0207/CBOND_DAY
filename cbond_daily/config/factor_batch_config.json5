@@ -1,5 +1,5 @@
 {
-  start: "2025-01-01",
+  start: "2024-01-01",
   end: "2026-01-12",
   min_count: 1,
   max_weight: 0.05,
@@ -15,8 +15,14 @@
     { name: "mser", params: { ema_span: 20, mean_window: 9 } },
     { name: "expr_alpha_001", params: { max_ret_win: 15, mdm1_win: 8, wma1_win: 20, mdm2_win: 6, max2_win: 60, delta_win: 9 } },
     { name: "conv_premium", params: {} },
-    // {"name": "trend_lagged_prem_repair","params": {"mom_win": 20,"prem_hist_win": 60,"prem_chg_win": 5,"liq_rank_min": 0.3,"min_year_to_mat": 0.3,"w_trend": 0.5,"w_cheap": 0.3,"w_lag": 0.2}},
-    {"name":"trend_prem_lag_simple","params":{"mom_win":20,"prem_chg_win":5,"liq_rank_min":0.5}}
+    { name: "trend_prem_lag_simple", params: { mom_win: 20, prem_chg_win: 5, liq_rank_min: 0.5 } },
+    { name: "rolling_ret_vol", params: { window: 7 } },
+    { name: "rolling_ret_vol", params: { window: 14 } },
+    { name: "rolling_ret_vol", params: { window: 28 } },
+    { name: "rolling_max_drawdown", params: { window: 7 } },
+    { name: "rolling_max_drawdown", params: { window: 14 } },
+    { name: "rolling_max_drawdown", params: { window: 28 } },
+    
   ],
   signals: [ 
     { name: "intraday_momentum", params: {}, bin_select: [3] },
@@ -24,8 +30,14 @@
     { name: "mser", params: { ema_span: 20, mean_window: 9 }, bin_select: [3] },
     { name: "expr_alpha_001", params: { max_ret_win: 15, mdm1_win: 8, wma1_win: 20, mdm2_win: 6, max2_win: 60, delta_win: 9 }, bin_select: [3] },
     { name: "conv_premium", params: {}, bin_select: [3] },
-    // {"name": "trend_lagged_prem_repair","params": {"mom_win": 20,"prem_hist_win": 60,"prem_chg_win": 5,"liq_rank_min": 0.3,"min_year_to_mat": 0.3,"w_trend": 0.5,"w_cheap": 0.3,"w_lag": 0.2}, bin_select: [3]},  
-    {"name":"trend_prem_lag_simple","params":{"mom_win":20,"prem_chg_win":5,"liq_rank_min":0.5}, bin_select: [0]}
+    { name: "trend_prem_lag_simple", params: { mom_win: 20, prem_chg_win: 5, liq_rank_min: 0.5 }, bin_select: [0] },
+    { name: "rolling_ret_vol", params: { window: 7 }, bin_select: [0] },
+    { name: "rolling_ret_vol", params: { window: 14 }, bin_select: [0] },
+    { name: "rolling_ret_vol", params: { window: 28 }, bin_select: [0] },
+    { name: "rolling_max_drawdown", params: { window: 7 }, bin_select: [0] },
+    { name: "rolling_max_drawdown", params: { window: 14 }, bin_select: [0] },
+    { name: "rolling_max_drawdown", params: { window: 28 }, bin_select: [0] },
+    
   ],
   batch_id: "Single_Factor",
 }

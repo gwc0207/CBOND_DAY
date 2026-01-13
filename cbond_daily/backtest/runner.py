@@ -131,7 +131,8 @@ def _select_bins_by_mean_return(
         valid_mask = work.notna()
         denom = valid_mask.mul(weights.abs(), axis=1).sum(axis=1)
         weighted = work.mul(weights, axis=1).sum(axis=1)
-        composite = weighted.where(denom > 0).div(denom)
+        denom = denom.replace(0, np.nan)
+        composite = weighted.where(denom.notna()).div(denom)
         if composite.isna().all():
             continue
         tradable = tradable.copy()
@@ -240,11 +241,11 @@ def run_backtest(
                 duplicates="drop",
             )
         except ValueError:
-            diagnostics.append({"trade_date": day.date(), "status": "skip", "reason": "binning_failed"})
+            diagnostics.append({"trade_date": day_date, "status": "skip", "reason": "binning_failed"})
             continue
         available_bins = sorted(bins_cat.dropna().unique().tolist())
         if not available_bins:
-            diagnostics.append({"trade_date": day.date(), "status": "skip", "reason": "binning_failed"})
+            diagnostics.append({"trade_date": day_date, "status": "skip", "reason": "binning_failed"})
             continue
         n_bins = len(available_bins)
         if max(bin_select) >= n_bins:
@@ -510,11 +511,11 @@ def run_backtest_linear(
                 duplicates="drop",
             )
         except ValueError:
-            diagnostics.append({"trade_date": day.date(), "status": "skip", "reason": "binning_failed"})
+            diagnostics.append({"trade_date": day_date, "status": "skip", "reason": "binning_failed"})
             continue
         available_bins = sorted(bins_cat.dropna().unique().tolist())
         if not available_bins:
-            diagnostics.append({"trade_date": day.date(), "status": "skip", "reason": "binning_failed"})
+            diagnostics.append({"trade_date": day_date, "status": "skip", "reason": "binning_failed"})
             continue
         n_bins = len(available_bins)
         if max(bin_select) >= n_bins:
