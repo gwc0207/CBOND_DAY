@@ -1,13 +1,13 @@
 {
-  start: "2025-01-01",
+  start: "2024-01-01",
   end: "2026-01-12",
   min_count: 1,
   max_weight: 0.05,
-  buy_twap_col: "twap_0930_1000",
-  sell_twap_col: "twap_1430_1500",
+  buy_twap_col: "twap_0945_1000",
+  sell_twap_col: "twap_1430_1442",
   twap_bps: 1,
   max_workers: 10,
-  overwrite: false,
+  overwrite: true,
   write_factors: true,
   factors: [
     { name: "intraday_momentum", params: {} },
