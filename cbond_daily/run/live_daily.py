@@ -268,6 +268,9 @@ def main() -> None:
         factor_defs=live_cfg.get("factors", []),
         overwrite=bool(live_cfg.get("factors_overwrite", False)),
         update_only=live_cfg.get("factors_update_only"),
+        nan_filter_mode=live_cfg.get("nan_filter_mode", "none"),
+        buy_twap_col=backtest_cfg.get("buy_twap_col"),
+        sell_twap_col=backtest_cfg.get("sell_twap_col"),
     )
 
     signal = _pick_signal(backtest_cfg, signal_name)

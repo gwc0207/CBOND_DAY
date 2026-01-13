@@ -20,7 +20,7 @@
       normalize: "l1", fallback: "manual" 
   },
   signals: [
-    { name: "combo_default", bin_select: [18,8], normalize: "zscore", items: [
+    { name: "combo_default", bin_select: [0,1], normalize: "zscore", items: [
       { name: "intraday_momentum", params: {}, w: 1.0 },
       { name: "liquidity", params: {}, w: 1.0 },
       { name: "conv_premium", params: {}, w: 1.0 },

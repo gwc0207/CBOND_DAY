@@ -48,6 +48,9 @@ def run_factor_pipeline(
     *,
     update_only: Iterable[str] | None = None,
     overwrite: bool = False,
+    nan_filter_mode: str = "none",
+    buy_twap_col: str | None = None,
+    sell_twap_col: str | None = None,
 ) -> None:
     update_only = set(update_only or [])
     factor_items: list[dict] = []
@@ -107,11 +110,39 @@ def run_factor_pipeline(
     full_df = full_df.copy()
     full_df["trade_date"] = pd.to_datetime(full_df["trade_date"]).dt.date
     target_set = set(target_days)
-    mask = full_df["trade_date"].isin(target_set)
-    if not mask.any():
+    target_mask = full_df["trade_date"].isin(target_set)
+    if not target_mask.any():
         raise ValueError("no rows found for target trading days")
 
-    out_df = full_df.loc[mask, ["trade_date", "code"]].copy()
+    tradable_mask: pd.Series | None = None
+    mode = str(nan_filter_mode or "none").lower()
+    if mode != "none":
+        if mode == "twap":
+            if not buy_twap_col or not sell_twap_col:
+                raise ValueError("nan_filter_mode=twap requires buy_twap_col and sell_twap_col")
+            missing_cols = [c for c in (buy_twap_col, sell_twap_col) if c not in full_df.columns]
+            if missing_cols:
+                raise KeyError(f"missing columns for nan filter: {missing_cols}")
+            tradable_mask = (
+                full_df[buy_twap_col].notna()
+                & full_df[sell_twap_col].notna()
+                & (full_df[buy_twap_col] > 0)
+                & (full_df[sell_twap_col] > 0)
+            )
+        elif mode == "close":
+            for col in ("close_price", "prev_close_price"):
+                if col not in full_df.columns:
+                    raise KeyError(f"missing column for nan filter: {col}")
+            tradable_mask = (
+                full_df["close_price"].notna()
+                & full_df["prev_close_price"].notna()
+                & (full_df["close_price"] > 0)
+                & (full_df["prev_close_price"] > 0)
+            )
+        else:
+            raise ValueError(f"unknown nan_filter_mode: {nan_filter_mode}")
+
+    out_df = full_df.loc[target_mask, ["trade_date", "code"]].copy()
 
     total_tasks = len(factor_items)
     done = 0
@@ -122,7 +153,10 @@ def run_factor_pipeline(
         series_all = factor.compute(full_df)
         if len(series_all) != len(full_df):
             raise ValueError(f"factor {item['name']} returned invalid length")
-        series_vals = pd.Series(series_all).loc[mask].to_numpy()
+        series_all = pd.Series(series_all)
+        if tradable_mask is not None:
+            series_all = series_all.where(tradable_mask, pd.NA)
+        series_vals = series_all.loc[target_mask].to_numpy()
         out_df[col_name] = series_vals
         done += 1
         pct = int(done * 100 / total_tasks) if total_tasks else 100

@@ -6,6 +6,7 @@
   buy_twap_col: "twap_0945_1000",
   sell_twap_col: "twap_1430_1442",
   twap_bps: 1,
+  nan_filter_mode: "twap",
   max_workers: 10,
   overwrite: true,
   write_factors: true,

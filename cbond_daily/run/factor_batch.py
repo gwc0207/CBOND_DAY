@@ -66,6 +66,9 @@ def main() -> None:
             factors,
             update_only=exp_cfg.get("update_only"),
             overwrite=bool(exp_cfg.get("overwrite", False)),
+            nan_filter_mode=exp_cfg.get("nan_filter_mode", "none"),
+            buy_twap_col=exp_cfg.get("buy_twap_col"),
+            sell_twap_col=exp_cfg.get("sell_twap_col"),
         )
 
     run_factor_batch(
