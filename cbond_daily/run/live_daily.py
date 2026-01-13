@@ -111,6 +111,9 @@ def _build_factors(
     factor_defs: list[dict],
     overwrite: bool,
     update_only: list[str] | None,
+    nan_filter_mode: str = "none",
+    buy_twap_col: str | None = None,
+    sell_twap_col: str | None = None,
 ) -> None:
     if not overwrite:
         last_date = get_latest_dws_date(dws_root)
@@ -127,6 +130,9 @@ def _build_factors(
         factor_defs,
         update_only=update_only,
         overwrite=overwrite,
+        nan_filter_mode=nan_filter_mode,
+        buy_twap_col=buy_twap_col,
+        sell_twap_col=sell_twap_col,
     )
 
 
@@ -314,7 +320,7 @@ def main() -> None:
         if live_cfg.get("db_write", False):
             _write_trades_to_db(
                 trades=result.positions,
-                trade_day=trade_day,
+                trade_day=signal_day,
                 table=live_cfg["db_table"],
                 mode=live_cfg.get("db_mode", "replace_date"),
             )
