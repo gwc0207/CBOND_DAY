@@ -1,5 +1,5 @@
 {
-  start: "2024-01-01",
+  start: "2025-01-01",
   end: "2026-01-12",
   min_count: 1,
   max_weight: 0.05,
