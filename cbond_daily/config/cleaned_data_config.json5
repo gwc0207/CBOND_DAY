@@ -1,5 +1,5 @@
 {
-  full_refresh: false,
+  full_refresh: true,
   merge_tables: [
     "market_cbond.daily_price",
     "market_cbond.daily_twap",
@@ -14,10 +14,10 @@
     "market_cbond.daily_price": { select_cols: ["instrument_code","exchange_code","trade_date","prev_close_price","close_price","amount"], prefix: "" },
     "market_cbond.daily_twap": { select_cols: ["instrument_code","exchange_code","trade_date","twap_0930_1000","twap_1430_1500","twap_0945_1000","twap_1430_1442"], prefix: "" },
     "market_cbond.daily_vwap": { select_cols: ["instrument_code","exchange_code","trade_date","vwap_0930_1000","vwap_1430_1500"], prefix: "" },
-    "market_cbond.daily_deriv": { select_cols: ["instrument_code","exchange_code","trade_date","bond_prem_ratio","stock_close_price","year_to_mat","ytm"], prefix: "deriv_" },
-    "market_cbond.daily_base": { select_cols: ["instrument_code","exchange_code","trade_date","bond_prem_ratio","stk_close_price","year_to_mat","ytm","in_trigger_process"], prefix: "base_" },
+    "market_cbond.daily_deriv": { select_cols: ["instrument_code","exchange_code","trade_date","bond_prem_ratio","stock_close_price","year_to_mat","ytm","conv_value","pure_redemption_value"], prefix: "deriv_" },
+    "market_cbond.daily_base": { select_cols: ["instrument_code","exchange_code","trade_date","bond_prem_ratio","stk_close_price","year_to_mat","ytm","in_trigger_process","conv_value","pure_redemption_value"], prefix: "base_" },
     "market_cbond.daily_rating": { select_cols: ["instrument_code","exchange_code","trade_date","rating"], prefix: "rating_" },
     "metadata.cbond_info": { select_cols: ["instrument_code","exchange_code","instrument_id","stock_code","instrument_name"], prefix: "info_" },
   },
-  overwrite: false,
+  overwrite: true,
 }

@@ -1,6 +1,6 @@
 {
   start: "2026-01-01",
-  end: "2026-01-12",
+  end: "2026-01-13",
   min_count: 10,
   max_weight: 0.05,
   buy_twap_col: "twap_0945_1000",
@@ -10,7 +10,7 @@
   ic_bins: 20,
   max_workers: 10,
   batch_id: "Backtest",
-  bin_source: "auto",
+  bin_source: "manual",
   bin_top_k: 2,
   weight_source: "regression",
   regression_cfg: { 
@@ -20,7 +20,7 @@
       normalize: "l1", fallback: "manual" 
   },
   signals: [
-    { name: "combo_default", bin_select: [0,1], normalize: "zscore", items: [
+    { name: "combo_default", bin_select: [1,2], normalize: "zscore", items: [
       // { name: "intraday_momentum", params: {}, w: 1.0 },
       // { name: "liquidity", params: {}, w: 1.0 },
       { name: "conv_premium", params: {}, w: 1.0 },

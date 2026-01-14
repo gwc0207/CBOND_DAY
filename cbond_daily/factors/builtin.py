@@ -465,6 +465,163 @@ class TrendPremLagSimple(Factor):
         out.name = self.name
         return out
 
+@dataclass
+class OptionCheapness(Factor):
+    """
+    期权便宜度（Option Cheapness / Vol-Value Mispricing）
+
+    定义：
+      O   = CB_close - PureBondValue
+      OVR = O / ConvValue
+      RV  = AnnualizedStd( log(S_t / S_{t-1}), vol_win )
+
+      Factor = RV / (OVR + eps)
+
+    过滤（不满足则 NaN）：
+      1) O > 0
+      2) ConvValue > 0
+      3) 成交额当日截面分位 >= liq_rank_min
+      4) 未进入强赎/触发流程（若字段存在）
+      5) year_to_mat >= min_year_to_mat（若字段存在）
+    """
+
+    name: str = "option_cheapness"
+
+    # windows
+    vol_win: int = 20
+    annualize: int = 252
+    eps: float = 1e-8
+
+    # filters
+    liq_rank_min: float = 0.50
+    min_year_to_mat: float = 0.30
+
+    # columns
+    date_col: str = "trade_date"
+    code_col: str = "code"
+
+    cb_close_col_primary: str = "close_price"
+    cb_close_col_fallback: str = "base_cb_close_price"
+
+    amount_col_primary: str = "amount"
+    amount_col_fallback: str = "base_cb_amount"
+
+    stock_close_col_primary: str = "base_stk_close_price"
+    stock_close_col_fallback: str = "deriv_stock_close_price"
+
+    conv_value_col_primary: str = "deriv_conv_value"
+    conv_value_col_fallback: str = "base_conv_value"
+
+    pure_bond_col_primary: str = "deriv_pure_redemption_value"
+    pure_bond_col_fallback: str = "base_pure_redemption_value"
+
+    year_to_mat_col_primary: str = "deriv_year_to_mat"
+    year_to_mat_col_fallback: str = "base_year_to_mat"
+
+    in_trigger_process_col: str = "base_in_trigger_process"
+
+    def required_lookback(self) -> int:
+        return int(self.vol_win + 2)
+
+    @staticmethod
+    def _pick_first_existing(df: pd.DataFrame, candidates: list[str]) -> str | None:
+        for c in candidates:
+            if c in df.columns:
+                return c
+        return None
+
+    @staticmethod
+    def _to_float(s: pd.Series) -> pd.Series:
+        s = pd.to_numeric(s, errors="coerce").astype(float)
+        return s.replace([np.inf, -np.inf], np.nan)
+
+    @staticmethod
+    def _cs_rank(df: pd.DataFrame, values: pd.Series, date_col: str) -> pd.Series:
+        return values.groupby(df[date_col]).rank(method="average", pct=True)
+
+    def compute(self, data: pd.DataFrame) -> pd.Series:
+        cb_close_col = self._pick_first_existing(data, [self.cb_close_col_primary, self.cb_close_col_fallback])
+        amount_col = self._pick_first_existing(data, [self.amount_col_primary, self.amount_col_fallback])
+        stock_close_col = self._pick_first_existing(data, [self.stock_close_col_primary, self.stock_close_col_fallback])
+        conv_value_col = self._pick_first_existing(data, [self.conv_value_col_primary, self.conv_value_col_fallback])
+        pure_bond_col = self._pick_first_existing(data, [self.pure_bond_col_primary, self.pure_bond_col_fallback])
+        year_to_mat_col = self._pick_first_existing(data, [self.year_to_mat_col_primary, self.year_to_mat_col_fallback])
+
+        required = [self.date_col, self.code_col, cb_close_col, amount_col, stock_close_col, conv_value_col, pure_bond_col]
+        if any(c is None for c in required):
+            return pd.Series(np.nan, index=data.index, name=self.name)
+
+        # 只取必要列 + 排序保证 rolling 正确，最后再按原 index 还原
+        cols = [self.date_col, self.code_col, cb_close_col, amount_col, stock_close_col, conv_value_col, pure_bond_col]
+        if year_to_mat_col is not None:
+            cols.append(year_to_mat_col)
+        if self.in_trigger_process_col in data.columns:
+            cols.append(self.in_trigger_process_col)
+
+        df = data[cols].copy()
+        df["_idx"] = df.index
+        df[self.date_col] = pd.to_datetime(df[self.date_col]).dt.date
+        df = df.sort_values([self.code_col, self.date_col])
+
+        cb_close = self._to_float(df[cb_close_col])
+        amount = self._to_float(df[amount_col])
+        stk_close = self._to_float(df[stock_close_col])
+        conv_value = self._to_float(df[conv_value_col])
+        pure_bond = self._to_float(df[pure_bond_col])
+
+        # OVR = (CB - PureBond) / ConvValue
+        opt_value = cb_close - pure_bond
+        ovr = opt_value / conv_value.replace(0.0, np.nan)
+        ovr = ovr.replace([np.inf, -np.inf], np.nan)
+
+        # RV = annualized rolling std of log returns of stock close
+        log_ret = np.log(stk_close / stk_close.groupby(df[self.code_col]).shift(1))
+        log_ret = log_ret.replace([np.inf, -np.inf], np.nan)
+        rv = log_ret.groupby(df[self.code_col]).transform(
+            lambda s: s.rolling(self.vol_win, min_periods=max(5, self.vol_win // 3)).std()
+        )
+        rv = rv * np.sqrt(float(self.annualize))
+        rv = rv.replace([np.inf, -np.inf], np.nan)
+
+        factor = rv / (ovr + float(self.eps))
+        factor = factor.replace([np.inf, -np.inf], np.nan)
+
+        # filters
+        mask_opt = opt_value > 0.0
+        mask_cv = conv_value > 0.0
+
+        liq_rank = self._cs_rank(df, amount.fillna(0.0), self.date_col)
+        mask_liq = liq_rank >= float(self.liq_rank_min)
+
+        if self.in_trigger_process_col in df.columns:
+            in_trigger = pd.to_numeric(df[self.in_trigger_process_col], errors="coerce").fillna(0.0).astype(float)
+            mask_trigger = in_trigger <= 0.0
+        else:
+            mask_trigger = pd.Series(True, index=df.index)
+
+        if year_to_mat_col is not None and year_to_mat_col in df.columns:
+            ytm = self._to_float(df[year_to_mat_col])
+            mask_mat = ytm >= float(self.min_year_to_mat)
+        else:
+            mask_mat = pd.Series(True, index=df.index)
+
+        mask_valid = np.isfinite(rv) & np.isfinite(ovr) & np.isfinite(factor)
+        mask = mask_opt & mask_cv & mask_liq & mask_trigger & mask_mat & mask_valid
+
+        out = factor.where(mask, np.nan)
+        out.name = self.name
+
+        # 还原到原 data.index 顺序
+        out = df.set_index("_idx").assign(_out=out).loc[:, "_out"].reindex(data.index)
+        out.name = self.name
+        return out
+
+
+@FactorRegistry.register("option_cheapness")
+class OptionCheapnessRegistered(OptionCheapness):
+    pass
+
+
 
 @FactorRegistry.register("trend_prem_lag_simple")
 class TrendPremLagSimpleRegistered(TrendPremLagSimple):
