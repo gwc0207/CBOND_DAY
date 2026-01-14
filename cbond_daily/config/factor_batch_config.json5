@@ -8,6 +8,9 @@
   twap_bps: 1,
   nan_filter_mode: "twap",
   max_workers: 10,
+  bin_source: "auto",
+  bin_top_k: 2,
+  bin_lookback_days: 60,
   overwrite: false,
   write_factors: true,
   factors: [
@@ -23,8 +26,10 @@
     // { name: "rolling_max_drawdown", params: { window: 7 } },
     // { name: "rolling_max_drawdown", params: { window: 14 } },
     // { name: "rolling_max_drawdown", params: { window: 28 } },
-    { name: "option_cheapness", params: { vol_win: 20, annualize: 252, eps: 1e-8, liq_rank_min: 0.50, min_year_to_mat: 0.30 } },
-    
+    { name: "carry_cheapness", params: { use_duration: false } },
+    { name: "carry_cheapness", params: { use_duration: true, alpha: 0.2 } },
+    { name: "carry_cheapness", params: { use_duration: true, alpha: 0.5 } },
+    { name: "carry_cheapness", params: { use_duration: true, alpha: 1.0 } },
   ],
   signals: [ 
     // { name: "intraday_momentum", params: {}, bin_select: [3] },
@@ -39,8 +44,10 @@
     // { name: "rolling_max_drawdown", params: { window: 7 }, bin_select: [0] },
     // { name: "rolling_max_drawdown", params: { window: 14 }, bin_select: [0] },
     // { name: "rolling_max_drawdown", params: { window: 28 }, bin_select: [0] },
-    { name: "option_cheapness", params: { vol_win: 20, annualize: 252, eps: 1e-8, liq_rank_min: 0.50, min_year_to_mat: 0.30 }, bin_select: [0] },
-    
+    { name: "carry_cheapness", params: { use_duration: false }, bin_select: [0] },
+    { name: "carry_cheapness", params: { use_duration: true, alpha: 0.2 }, bin_select: [0] },
+    { name: "carry_cheapness", params: { use_duration: true, alpha: 0.5 }, bin_select: [0] },
+    { name: "carry_cheapness", params: { use_duration: true, alpha: 1.0 }, bin_select: [0] },
   ],
   batch_id: "Single_Factor",
 }

@@ -24,6 +24,7 @@ def main(*, full: bool | None = None) -> None:
     start = parse_date(bt_cfg["start"])
     end = parse_date(bt_cfg["end"])
 
+    print(f"[raw_data] start sync: {start} -> {end}, full_refresh={full}")
     for table in raw_cfg.get("sync_tables", []):
         last_date = None if full else get_latest_table_date(ods_root, table)
         date_based = table in DATE_COLUMNS
@@ -40,6 +41,7 @@ def main(*, full: bool | None = None) -> None:
             continue
         write_table_by_date(df, ods_root, table, date_col="trade_date")
         print(f"synced {table}: {len(df)}")
+    print("[raw_data] finished sync")
 
 
 if __name__ == "__main__":

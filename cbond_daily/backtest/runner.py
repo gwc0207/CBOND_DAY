@@ -177,6 +177,9 @@ def run_backtest(
     twap_bps: float,
     bin_count: int | None = None,
     bin_select: list[int] | None = None,
+    bin_source: str = "manual",
+    bin_top_k: int = 2,
+    bin_lookback_days: int = 60,
 ) -> BacktestResult:
     result = BacktestResult()
     daily_records: list[dict] = []
@@ -229,7 +232,23 @@ def run_backtest(
         if tradable.empty:
             diagnostics.append({"trade_date": day_date, "status": "skip", "reason": "no_tradable"})
             continue
-        if bin_select is None:
+        effective_bins = bin_select
+        if bin_source == "auto":
+            train_days = [d for d in trading_days if d < day_date][-bin_lookback_days:]
+            ranked_bins = _select_bins_by_mean_return(
+                dwd_root=dwd_root,
+                dws_root=dws_root,
+                train_days=train_days,
+                factor_items=[{"col": factor_col}],
+                weights=pd.Series([1.0], index=[factor_col]),
+                buy_twap_col=buy_twap_col,
+                sell_twap_col=sell_twap_col,
+                twap_bps=twap_bps,
+                bin_count=bin_count or 20,
+            )
+            if len(ranked_bins) >= bin_top_k:
+                effective_bins = ranked_bins[:bin_top_k]
+        if effective_bins is None:
             raise ValueError("bin_select is required for bin-based selection")
         if bin_count is None or bin_count <= 1:
             raise ValueError("bin_count must be > 1 for bin-based selection")
@@ -248,11 +267,10 @@ def run_backtest(
             diagnostics.append({"trade_date": day_date, "status": "skip", "reason": "binning_failed"})
             continue
         n_bins = len(available_bins)
-        if max(bin_select) >= n_bins:
+        if max(effective_bins) >= n_bins:
             raise ValueError(
-                f"bin_select out of range: have {n_bins} bins, select {bin_select}"
+                f"bin_select out of range: have {n_bins} bins, select {effective_bins}"
             )
-        effective_bins = bin_select
         picks = tradable[bins_cat.isin(effective_bins)]
         if len(picks) < min_count:
             diagnostics.append(

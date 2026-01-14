@@ -23,13 +23,18 @@ def main() -> None:
     start = parse_date(bt_cfg["start"])
     end = parse_date(bt_cfg["end"])
     full_refresh = bool(cleaned_cfg.get("full_refresh", False))
-    if not full_refresh:
+    overwrite = bool(cleaned_cfg.get("overwrite", False))
+    if not full_refresh and not overwrite:
         last_date = get_latest_dwd_date(dwd_root)
         if last_date is not None:
             start = max(start, last_date + timedelta(days=1))
         if start > end:
             return
 
+    print(
+        f"[cleaned_data] start build: {start} -> {end}, "
+        f"full_refresh={full_refresh}, overwrite={overwrite}"
+    )
     build_dwd_daily(
         ods_root,
         dwd_root,
@@ -39,6 +44,7 @@ def main() -> None:
         merge_tables=cleaned_cfg["merge_tables"],
         table_schemas=cleaned_cfg.get("table_schemas"),
     )
+    print("[cleaned_data] finished build")
 
 
 if __name__ == "__main__":

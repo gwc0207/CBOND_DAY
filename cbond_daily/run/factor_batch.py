@@ -39,16 +39,24 @@ def main() -> None:
                 col = item["col"]
             else:
                 col = build_factor_col(item["name"], item.get("params"))
+            bin_source = item.get("bin_source") or exp_cfg.get("bin_source", "manual")
+            bin_top_k = int(item.get("bin_top_k") or exp_cfg.get("bin_top_k", 2))
+            bin_lookback_days = int(
+                item.get("bin_lookback_days") or exp_cfg.get("bin_lookback_days", 60)
+            )
             bin_select = item.get("bin_select")
-            if not bin_select:
-                raise ValueError("each signal needs bin_select")
+            if bin_source == "manual" and not bin_select:
+                raise ValueError("each manual signal needs bin_select")
             max_weight = float(exp_cfg.get("max_weight", 0.05))
             signals.append(
                 SignalSpec(
                     signal_id=item.get("signal_id") or col,
                     col=col,
-                    bin_select=[int(x) for x in bin_select],
+                    bin_select=[int(x) for x in bin_select] if bin_select else None,
                     max_weight=max_weight,
+                    bin_source=bin_source,
+                    bin_top_k=bin_top_k,
+                    bin_lookback_days=bin_lookback_days,
                 )
             )
     else:

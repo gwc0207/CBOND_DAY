@@ -18,8 +18,11 @@ from cbond_daily.backtest.runner import run_backtest
 class SignalSpec:
     signal_id: str
     col: str
-    bin_select: list[int]
+    bin_select: list[int] | None
     max_weight: float
+    bin_source: str = "manual"
+    bin_top_k: int = 2
+    bin_lookback_days: int = 60
 
 
 def _safe_part(value: str) -> str:
@@ -123,6 +126,9 @@ def run_factor_batch(
             twap_bps=twap_bps,
             bin_count=bin_count,
             bin_select=spec.bin_select,
+            bin_source=spec.bin_source,
+            bin_top_k=spec.bin_top_k,
+            bin_lookback_days=spec.bin_lookback_days,
         )
         _write_result(signal_dir, result)
         daily = result.daily_returns if result.daily_returns is not None else pd.DataFrame()
