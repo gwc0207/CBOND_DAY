@@ -1,6 +1,6 @@
 {
   start: "2026-01-01",
-  end: "2026-01-13",
+  end: "2026-01-14",
   min_count: 10,
   max_weight: 0.05,
   buy_twap_col: "twap_0945_1000",
