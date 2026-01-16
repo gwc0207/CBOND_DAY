@@ -30,6 +30,7 @@
     { name: "carry_cheapness", params: { use_duration: true, alpha: 0.2 } },
     { name: "carry_cheapness", params: { use_duration: true, alpha: 0.5 } },
     { name: "carry_cheapness", params: { use_duration: true, alpha: 1.0 } },
+    { name: "stock_trend_delta", params: { mom_window: 20, stock_close_col: "deriv_stock_close_price", delta_col: "base_delta" } },
   ],
   signals: [ 
     // { name: "intraday_momentum", params: {}, bin_select: [3] },
@@ -48,6 +49,7 @@
     { name: "carry_cheapness", params: { use_duration: true, alpha: 0.2 }, bin_select: [0] },
     { name: "carry_cheapness", params: { use_duration: true, alpha: 0.5 }, bin_select: [0] },
     { name: "carry_cheapness", params: { use_duration: true, alpha: 1.0 }, bin_select: [0] },
+    { name: "stock_trend_delta", params: { mom_window: 20, stock_close_col: "deriv_stock_close_price", delta_col: "base_delta" }, bin_select: [0] },
   ],
   batch_id: "Single_Factor",
 }

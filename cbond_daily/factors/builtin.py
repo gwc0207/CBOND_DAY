@@ -513,6 +513,53 @@ class CarryCheapness(Factor):
     def required_lookback(self) -> int:
         return 1
 
+@dataclass
+class StockTrendDelta(Factor):
+    """
+    CSRank(stock_momentum) * CSRank(base_delta)
+
+    stock_momentum = stock_close / stock_close.shift(n) - 1
+    """
+    name: str = "stock_trend_delta"
+
+    # columns
+    date_col: str = "trade_date"
+    stock_close_col: str = "stock_close"
+    delta_col: str = "base_delta"
+
+    # hyper-parameter
+    mom_window: int = 20
+
+    def compute(self, data: pd.DataFrame) -> pd.Series:
+        for c in (self.date_col, self.stock_close_col, self.delta_col):
+            if c not in data.columns:
+                raise KeyError(f"[{self.name}] missing required column: {c}")
+
+        stock_close = pd.to_numeric(
+            data[self.stock_close_col], errors="coerce"
+        ).replace([np.inf, -np.inf], np.nan)
+
+        # 正股动量
+        stock_mom = stock_close / stock_close.shift(self.mom_window) - 1.0
+
+        delta = pd.to_numeric(
+            data[self.delta_col], errors="coerce"
+        ).replace([np.inf, -np.inf], np.nan)
+
+        r_mom = ops.cs_rank(data, stock_mom, self.date_col)
+        r_delta = ops.cs_rank(data, delta, self.date_col)
+
+        factor = r_mom * r_delta
+        return factor.astype(float)
+
+    def required_lookback(self) -> int:
+        return self.mom_window + 1
+
+
+@FactorRegistry.register("stock_trend_delta")
+class StockTrendDeltaRegistered(StockTrendDelta):
+    pass
+
 
 @FactorRegistry.register("carry_cheapness")
 class CarryCheapnessRegistered(CarryCheapness):
