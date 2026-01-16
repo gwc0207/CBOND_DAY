@@ -29,6 +29,7 @@ def main() -> None:
         if last_date is not None:
             start = max(start, last_date + timedelta(days=1))
         if start > end:
+            print("[cleaned_data] skip build: up to date")
             return
 
     print(

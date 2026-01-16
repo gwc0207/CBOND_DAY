@@ -168,20 +168,18 @@ def run_factor_pipeline(
             last_pct = pct
             print(f"factor_pipeline progress: {pct}% ({done}/{total_tasks})")
 
+    total_days = len(target_days)
+    done_days = 0
+    last_day_pct = -1
     for day_date in target_days:
         day_df = out_df[out_df["trade_date"] == day_date]
         if day_df.empty:
             raise ValueError(f"missing factor output for {day_date}")
         existing = read_dws_factors_daily(dws_root, day_date)
         added_cols = [col for col in day_df.columns if col not in ("trade_date", "code")]
-        overwritten_cols: list[str] = []
         if not existing.empty:
             existing_cols = set(existing.columns)
             added_cols = [col for col in added_cols if col not in existing_cols]
-            if overwrite:
-                overwritten_cols = [
-                    col for col in day_df.columns if col in existing_cols and col not in ("trade_date", "code")
-                ]
             existing_keyed = existing.set_index(["trade_date", "code"])
             out_keyed = day_df.set_index(["trade_date", "code"])
             if overwrite:
@@ -189,9 +187,10 @@ def run_factor_pipeline(
             else:
                 day_df = existing_keyed.combine_first(out_keyed).reset_index()
         write_dws_factors_by_date(day_df, dws_root, date_col="trade_date")
-        if added_cols or overwritten_cols:
-            print(
-                f"[factor_pipeline] {day_date}: added={len(added_cols)}, "
-                f"overwritten={len(overwritten_cols)}"
-            )
+        done_days += 1
+        day_pct = int(done_days * 100 / total_days) if total_days else 100
+        if day_pct % 20 == 0 and day_pct != last_day_pct:
+            last_day_pct = day_pct
+            print(f"[factor_pipeline] write progress: {day_pct}% ({done_days}/{total_days})")
+    print(f"[factor_pipeline] wrote {total_days} trading days")
     print("[factor_pipeline] finished build")

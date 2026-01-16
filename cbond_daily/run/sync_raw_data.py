@@ -31,13 +31,16 @@ def main(*, full: bool | None = None) -> None:
         if date_based:
             fetch_start = max(start, last_date + timedelta(days=1)) if last_date else start
             if fetch_start > end:
+                print(f"[raw_data] skip {table}: up to date")
                 continue
             df = fetch_table(table, start=str(fetch_start), end=str(end))
         else:
             if not full and table_has_data(ods_root, table):
+                print(f"[raw_data] skip {table}: already exists")
                 continue
             df = fetch_table(table)
         if df.empty:
+            print(f"[raw_data] skip {table}: empty result")
             continue
         write_table_by_date(df, ods_root, table, date_col="trade_date")
         print(f"synced {table}: {len(df)}")

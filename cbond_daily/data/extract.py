@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Optional
+import warnings
 
 import pandas as pd
 import pyodbc
@@ -64,4 +65,10 @@ def fetch_table(
         sql = f"SELECT * FROM {table}"
         params = []
     with connect() as conn:
-        return pd.read_sql(sql, conn, params=params)
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="pandas only supports SQLAlchemy connectable",
+                category=UserWarning,
+            )
+            return pd.read_sql(sql, conn, params=params)
