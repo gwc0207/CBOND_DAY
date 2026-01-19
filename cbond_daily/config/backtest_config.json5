@@ -1,6 +1,6 @@
 {
-  start: "2025-12-01",
-  end: "2026-01-14",
+  start: "2025-01-01",
+  end: "2026-01-15",
   min_count: 10,
   max_weight: 0.05,
   buy_twap_col: "twap_0945_1000",
@@ -10,7 +10,7 @@
   ic_bins: 20,
   max_workers: 10,
   batch_id: "Backtest",
-  bin_source: "manual",
+  bin_source: "auto",
   bin_top_k: 2,
   weight_source: "regression",
   regression_cfg: { 
