@@ -341,8 +341,23 @@ def _render_report(
     ax.grid(True, alpha=0.3)
 
     ax = axes[1, 0]
+    bench_total_return = None
+    if not daily_returns_df.empty and "benchmark_return" in daily_returns_df.columns:
+        bench_nav = (1.0 + daily_returns_df["benchmark_return"].astype(float)).cumprod()
+        if not bench_nav.empty:
+            bench_total_return = float(bench_nav.iloc[-1] - 1.0)
+
     if not bin_stats.empty:
         ax.bar(bin_stats["bin"].astype(int), bin_stats["total_return"], color="#1F77B4")
+        if bench_total_return is not None:
+            ax.axhline(
+                bench_total_return,
+                color="#D62728",
+                linestyle="--",
+                linewidth=1.2,
+                label="Benchmark total",
+            )
+            ax.legend(fontsize=7)
     ax.set_title("Bin total return")
     ax.set_xlabel("Bin")
     ax.set_ylabel("Total Return")
