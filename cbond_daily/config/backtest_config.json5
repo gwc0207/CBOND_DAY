@@ -1,5 +1,5 @@
 {
-  start: "2025-01-01",
+  start: "2025-12-01",
   end: "2026-01-14",
   min_count: 10,
   max_weight: 0.05,
@@ -14,13 +14,13 @@
   bin_top_k: 2,
   weight_source: "regression",
   regression_cfg: { 
-      method: "ridge", ridge_alpha: 2.0, lookback_days: 60, 
+      method: "ridge", ridge_alpha: 2.0, lookback_days: 15, 
       refit_freq: 1, min_samples: 500, fit_intercept: true, 
       include_cost_in_label: true, max_weight: 3.0, 
       normalize: "l1", fallback: "manual" 
   },
   signals: [
-    { name: "combo_default", bin_select: [1,2], normalize: "zscore", items: [
+    { name: "combo_default", bin_select: [2,8], normalize: "zscore", items: [
       // { name: "intraday_momentum", params: {}, w: 1.0 },
       // { name: "liquidity", params: {}, w: 1.0 },
       { name: "conv_premium", params: {}, w: 1.0 },

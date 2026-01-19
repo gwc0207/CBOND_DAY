@@ -1,15 +1,12 @@
 {
   "best_params": {
-    "lambda_l1": 0.009096019400800352,
-    "lambda_l2": 0.6245953754049919,
-    "n_estimators": 200,
-    "max_depth": 5,
-    "num_leaves": 16,
-    "min_data_in_leaf": 180,
-    "feature_fraction": 0.7756947775446149,
-    "bagging_fraction": 0.9991215655109965,
-    "bagging_freq": 9
+    "lambda_l1": 6.305388847332851,
+    "lambda_l2": 1.802037527601969,
+    "n_estimators": 1000,
+    "max_depth": 16,
+    "num_leaves": 64,
+    "min_data_in_leaf": 500
   },
-  "best_value": 0.00011960174393360283,
-  "metric": "mse"
+  "best_value": 0.5082740186803616,
+  "metric": "acc"
 }
