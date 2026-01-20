@@ -10,7 +10,7 @@
   ic_bins: 20,
   max_workers: 10,
   batch_id: "Backtest",
-  bin_source: "auto",
+  bin_source: "manual",
   bin_top_k: 2,
   bin_lookback_days: 60,
   score_path: "results/models/linear_combo_default/scores.csv",

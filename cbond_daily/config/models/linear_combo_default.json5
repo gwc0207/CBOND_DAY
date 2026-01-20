@@ -16,7 +16,7 @@
   regression_cfg: {
     method: "ridge",
     ridge_alpha: 2.0,
-    lookback_days: 9,
+    lookback_days: 10,
     refit_freq: 1,
     min_samples: 500,
     fit_intercept: true,
