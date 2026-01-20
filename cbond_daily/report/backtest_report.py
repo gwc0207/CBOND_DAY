@@ -155,14 +155,14 @@ def _render_report(
     sell_col: str,
     bps: float,
     bins: int,
-    score_source: str = "internal",
+    score_source: str = "file",
     score_path: str | None = None,
 ) -> None:
     ic_records: list[dict] = []
     bin_records: list[dict] = []
     bin_time_records: list[dict] = []
 
-    use_scores = str(score_source or "internal").lower() == "file"
+    use_scores = str(score_source or "file").lower() == "file"
     score_cache: dict[date, pd.DataFrame] = {}
     if use_scores:
         if not score_path:
@@ -430,7 +430,7 @@ def run_backtest_report() -> None:
     sell_col = cfg["sell_twap_col"]
     bps = float(cfg["twap_bps"])
     bins = int(cfg.get("ic_bins", 20))
-    score_source = cfg.get("score_source", "internal")
+    score_source = cfg.get("score_source", "file")
     score_path = cfg.get("score_path")
 
     signals = cfg.get("signals", [])
@@ -447,7 +447,7 @@ def run_backtest_report() -> None:
     for signal in signals:
         signal_name = signal.get("name") or "signal"
         items = signal.get("items", [])
-        if not items and str(score_source or "internal").lower() != "file":
+        if not items and str(score_source or "file").lower() != "file":
             continue
         factor_items = []
         for it in items or []:

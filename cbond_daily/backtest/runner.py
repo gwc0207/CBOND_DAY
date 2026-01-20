@@ -436,7 +436,7 @@ def run_backtest_linear(
     bin_top_k: int = 2,
     bin_lookback_days: int = 60,
     weights_output_dir: Path | None = None,
-    score_source: str = "internal",
+    score_source: str = "file",
     score_path: str | None = None,
 ) -> BacktestResult:
     result = BacktestResult()
@@ -448,7 +448,7 @@ def run_backtest_linear(
     start, end = _align_start_end(trading_days, start, end)
     day_list = [d for d in trading_days if start <= d <= end]
     dwd_cache = _load_dwd_cache(dwd_root, day_list)
-    use_scores = str(score_source or "internal").lower() == "file"
+    use_scores = str(score_source or "file").lower() == "file"
     factor_day_map: dict[date, date | None] = {}
     factor_cache: dict[date, pd.DataFrame] = {}
     score_cache: dict[date, pd.DataFrame] = {}

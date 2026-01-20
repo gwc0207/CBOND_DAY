@@ -281,12 +281,13 @@ def main() -> None:
 
     signal = _pick_signal(backtest_cfg, signal_name)
     items = signal.get("items", [])
-    if not items:
-        raise ValueError("signal missing items")
     bin_select = signal.get("bin_select", [])
     if not bin_select:
         raise ValueError("signal missing bin_select")
-    factor_items = _build_factor_items(items)
+    score_path = backtest_cfg.get("score_path")
+    if not items and not score_path:
+        raise ValueError("signal missing items and score_path is not set")
+    factor_items = _build_factor_items(items) if items else []
 
     logs_root = Path(paths_cfg["results"])
     date_dir = f"{trade_day:%Y-%m-%d}"
@@ -308,11 +309,11 @@ def main() -> None:
         bin_count=int(backtest_cfg.get("ic_bins", 20)),
         bin_select=[int(x) for x in bin_select],
         normalize=signal.get("normalize", "zscore"),
-        weight_source=backtest_cfg.get("weight_source", "manual"),
-        regression_cfg=backtest_cfg.get("regression_cfg"),
         bin_source=backtest_cfg.get("bin_source", "manual"),
         bin_top_k=int(backtest_cfg.get("bin_top_k", 2)),
         weights_output_dir=out_dir,
+        score_source="file",
+        score_path=score_path,
     )
 
     if result.positions is not None:

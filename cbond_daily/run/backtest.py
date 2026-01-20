@@ -60,7 +60,7 @@ def main() -> None:
         if not bin_select:
             raise ValueError("signal missing bin_select")
         normalize = item.get("normalize", "zscore")
-        score_source = item.get("score_source", cfg.get("score_source", "internal"))
+        score_source = item.get("score_source", cfg.get("score_source", "file"))
         score_path = item.get("score_path", cfg.get("score_path"))
 
         factor_items = []
@@ -86,8 +86,6 @@ def main() -> None:
             bin_count=int(cfg.get("ic_bins", 20)),
             bin_select=[int(x) for x in bin_select],
             normalize=normalize,
-            weight_source=cfg.get("weight_source", "manual"),
-            regression_cfg=cfg.get("regression_cfg"),
             bin_source=cfg.get("bin_source", "manual"),
             bin_top_k=int(cfg.get("bin_top_k", 2)),
             bin_lookback_days=int(cfg.get("bin_lookback_days", 60)),

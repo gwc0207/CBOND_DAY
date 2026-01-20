@@ -1,0 +1,36 @@
+{
+  model_id: "linear_combo_default",
+  model_type: "linear",
+  weight_source: "regression",
+  normalize: "zscore",
+  start: "2025-01-01",
+  end: "2026-01-15",
+  label_cfg: {
+    buy_twap_col: "twap_0945_1000",
+    sell_twap_col: "twap_1430_1442",
+    twap_bps: 1.5,
+    fee_bps: 0.7,
+    include_cost_in_label: true,
+  },
+  regression_cfg: {
+    method: "ridge",
+    ridge_alpha: 2.0,
+    lookback_days: 9,
+    refit_freq: 1,
+    min_samples: 500,
+    fit_intercept: true,
+    max_weight: 3.0,
+    normalize: "l1",
+    fallback: "manual",
+  },
+  overwrite: true,
+  output: {
+    score_path: "results/models/linear_combo_default/scores.csv",
+    weights_path: "results/models/linear_combo_default/weights_history.csv",
+    meta_path: "results/models/linear_combo_default/meta.json",
+  },
+  factors: [
+    { name: "conv_premium", params: {}, w: 1.0 },
+    { name: "trend_prem_lag_simple", params: { mom_win: 20, prem_chg_win: 5, liq_rank_min: 0.5 }, w: 1.0 },
+  ],
+}
