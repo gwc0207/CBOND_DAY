@@ -5,6 +5,7 @@
   normalize: "zscore",
   start: "2025-01-01",
   end: "2026-01-15",
+  overwrite: true,
   label_cfg: {
     buy_twap_col: "twap_0945_1000",
     sell_twap_col: "twap_1430_1442",
@@ -23,11 +24,17 @@
     normalize: "l1",
     fallback: "manual",
   },
-  overwrite: true,
   output: {
     score_path: "results/models/linear_combo_default/scores.csv",
     weights_path: "results/models/linear_combo_default/weights_history.csv",
     meta_path: "results/models/linear_combo_default/meta.json",
+    metrics_path: "results/models/linear_combo_default/metrics.csv",
+    metrics_by_day_path: "results/models/linear_combo_default/metrics_by_day.csv",
+  },
+  eval: {
+    enabled: true,
+    split: { mode: "date", train_ratio: 0.6, val_ratio: 0.2, test_ratio: 0.2 },
+    metrics: ["r2", "rmse", "mae", "hit_rate", "ic", "rank_ic"],
   },
   factors: [
     { name: "conv_premium", params: {}, w: 1.0 },

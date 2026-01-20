@@ -210,7 +210,9 @@ def run_linear_score(
         if composite.isna().all():
             continue
 
-        for code, score in composite.items():
+        for code, score in zip(tradable["code"], composite, strict=False):
+            if pd.isna(score):
+                continue
             scores_rows.append(
                 {"trade_date": day_date, "code": code, "score": float(score)}
             )
@@ -246,3 +248,139 @@ def write_score_outputs(
         meta_path.parent.mkdir(parents=True, exist_ok=True)
         with meta_path.open("w", encoding="utf-8") as handle:
             json.dump(meta_payload, handle, ensure_ascii=False, indent=2, default=str)
+
+
+def _calc_label(
+    df: pd.DataFrame,
+    *,
+    buy_col: str,
+    sell_col: str,
+    twap_bps: float,
+    fee_bps: float,
+    include_cost: bool,
+) -> pd.Series:
+    if include_cost:
+        from cbond_daily.backtest.execution import apply_twap_bps
+
+        cost_bps = twap_bps + fee_bps
+        buy_px = apply_twap_bps(df[buy_col], cost_bps, side="buy")
+        sell_px = apply_twap_bps(df[sell_col], cost_bps, side="sell")
+        return (sell_px - buy_px) / buy_px
+    return (df[sell_col] / df[buy_col]) - 1.0
+
+
+def _rank_ic(x: pd.Series, y: pd.Series) -> float:
+    x_rank = x.rank(method="average")
+    y_rank = y.rank(method="average")
+    return float(x_rank.corr(y_rank, method="pearson"))
+
+
+def _calc_metrics(y_true: pd.Series, y_pred: pd.Series) -> dict[str, float]:
+    if y_true.empty:
+        return {"r2": 0.0, "rmse": 0.0, "mae": 0.0, "hit_rate": 0.0}
+    y_true = y_true.astype(float)
+    y_pred = y_pred.astype(float)
+    resid = y_true - y_pred
+    mse = float((resid**2).mean())
+    rmse = float(np.sqrt(mse)) if mse >= 0 else 0.0
+    mae = float(resid.abs().mean())
+    var = float(((y_true - y_true.mean()) ** 2).mean())
+    r2 = float(1.0 - mse / var) if var > 0 else 0.0
+    hit = float((np.sign(y_true) == np.sign(y_pred)).mean())
+    return {"r2": r2, "rmse": rmse, "mae": mae, "hit_rate": hit}
+
+
+def evaluate_scores(
+    *,
+    scores: pd.DataFrame,
+    dwd_root: str,
+    label_cfg: dict,
+    split_cfg: dict | None,
+    metrics: list[str],
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    if scores.empty:
+        return pd.DataFrame(), pd.DataFrame()
+    scores = scores.copy()
+    scores["trade_date"] = pd.to_datetime(scores["trade_date"]).dt.date
+    scores = scores.dropna(subset=["trade_date", "code", "score"])
+
+    buy_col = label_cfg["buy_twap_col"]
+    sell_col = label_cfg["sell_twap_col"]
+    twap_bps = float(label_cfg.get("twap_bps", 0.0))
+    fee_bps = float(label_cfg.get("fee_bps", 0.0))
+    include_cost = bool(label_cfg.get("include_cost_in_label", False))
+
+    rows: list[dict] = []
+    day_rows: list[dict] = []
+    for day, group in scores.groupby("trade_date"):
+        df = read_dwd_daily(dwd_root, day)
+        if df.empty:
+            continue
+        merged = df.merge(group[["code", "score"]], on="code", how="inner")
+        missing_cols = [c for c in (buy_col, sell_col) if c not in merged.columns]
+        if missing_cols:
+            raise KeyError(f"missing price columns for eval: {missing_cols}")
+        tradable = merged[
+            merged[buy_col].notna()
+            & merged[sell_col].notna()
+            & (merged[buy_col] > 0)
+            & (merged[sell_col] > 0)
+        ]
+        if tradable.empty:
+            continue
+        y = _calc_label(
+            tradable,
+            buy_col=buy_col,
+            sell_col=sell_col,
+            twap_bps=twap_bps,
+            fee_bps=fee_bps,
+            include_cost=include_cost,
+        )
+        work = pd.DataFrame({"y": y, "score": tradable["score"]}).replace(
+            [np.inf, -np.inf], np.nan
+        ).dropna()
+        if work.empty:
+            continue
+        day_metrics = _calc_metrics(work["y"], work["score"])
+        if "ic" in metrics:
+            day_metrics["ic"] = float(work["score"].corr(work["y"], method="pearson"))
+        if "rank_ic" in metrics:
+            day_metrics["rank_ic"] = _rank_ic(work["score"], work["y"])
+        day_metrics["trade_date"] = day
+        day_metrics["count"] = int(len(work))
+        day_rows.append(day_metrics)
+
+    by_day = pd.DataFrame(day_rows).sort_values("trade_date")
+    if by_day.empty:
+        return pd.DataFrame(), by_day
+
+    split_cfg = split_cfg or {"mode": "date", "train_ratio": 0.6, "val_ratio": 0.2, "test_ratio": 0.2}
+    mode = str(split_cfg.get("mode", "date")).lower()
+    if mode != "date":
+        mode = "date"
+    days = by_day["trade_date"].tolist()
+    total = len(days)
+    train_ratio = float(split_cfg.get("train_ratio", 0.6))
+    val_ratio = float(split_cfg.get("val_ratio", 0.2))
+    train_end = int(total * train_ratio)
+    val_end = int(total * (train_ratio + val_ratio))
+    splits = {
+        "train": set(days[:train_end]),
+        "val": set(days[train_end:val_end]),
+        "test": set(days[val_end:]),
+    }
+
+    for name, subset in splits.items():
+        subset_df = by_day[by_day["trade_date"].isin(subset)]
+        if subset_df.empty:
+            continue
+        summary = {}
+        for key in ["r2", "rmse", "mae", "hit_rate", "ic", "rank_ic"]:
+            if key in metrics and key in subset_df.columns:
+                summary[key] = float(subset_df[key].mean())
+        summary["split"] = name
+        summary["days"] = int(len(subset_df))
+        rows.append(summary)
+
+    summary_df = pd.DataFrame(rows)
+    return summary_df, by_day

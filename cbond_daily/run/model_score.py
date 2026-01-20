@@ -11,7 +11,11 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from cbond_daily.core.config import load_config_file, parse_date
-from cbond_daily.models.linear_score import run_linear_score, write_score_outputs
+from cbond_daily.models.linear_score import (
+    evaluate_scores as run_linear_eval,
+    run_linear_score,
+    write_score_outputs,
+)
 
 
 def _load_model_config(path: Path) -> dict:
@@ -78,6 +82,26 @@ def main() -> None:
         meta_payload=meta_payload,
         overwrite=overwrite,
     )
+
+    eval_cfg = model_cfg.get("eval", {})
+    if eval_cfg.get("enabled", False):
+        summary_df, by_day_df = run_linear_eval(
+            scores=result.scores,
+            dwd_root=paths_cfg["dwd_root"],
+            label_cfg=model_cfg.get("label_cfg", {}),
+            split_cfg=eval_cfg.get("split"),
+            metrics=eval_cfg.get(
+                "metrics", ["r2", "rmse", "mae", "hit_rate", "ic", "rank_ic"]
+            ),
+        )
+        metrics_path = output_cfg.get("metrics_path")
+        if metrics_path:
+            Path(metrics_path).parent.mkdir(parents=True, exist_ok=True)
+            summary_df.to_csv(metrics_path, index=False)
+        metrics_by_day_path = output_cfg.get("metrics_by_day_path")
+        if metrics_by_day_path:
+            Path(metrics_by_day_path).parent.mkdir(parents=True, exist_ok=True)
+            by_day_df.to_csv(metrics_by_day_path, index=False)
     print(f"saved: {score_path}")
 
 
