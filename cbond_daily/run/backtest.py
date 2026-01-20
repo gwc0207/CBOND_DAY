@@ -56,17 +56,19 @@ def main() -> None:
     def _run_signal(item: dict) -> dict:
         signal_name = item.get("name") or "signal"
         items = item.get("items", [])
-        if not items:
-            raise ValueError("signal missing items")
         bin_select = item.get("bin_select")
         if not bin_select:
             raise ValueError("signal missing bin_select")
         normalize = item.get("normalize", "zscore")
+        score_source = item.get("score_source", cfg.get("score_source", "internal"))
+        score_path = item.get("score_path", cfg.get("score_path"))
 
         factor_items = []
-        for it in items:
+        for it in items or []:
             col = build_factor_col(it["name"], it.get("params"))
             factor_items.append({"col": col, "w": float(it.get("w", 0.0))})
+        if score_source == "file" and not score_path:
+            raise ValueError("score_source=file requires score_path")
 
         out_dir = run_dir / signal_name
         result = run_backtest_linear(
@@ -88,7 +90,10 @@ def main() -> None:
             regression_cfg=cfg.get("regression_cfg"),
             bin_source=cfg.get("bin_source", "manual"),
             bin_top_k=int(cfg.get("bin_top_k", 2)),
+            bin_lookback_days=int(cfg.get("bin_lookback_days", 60)),
             weights_output_dir=out_dir,
+            score_source=score_source,
+            score_path=score_path,
         )
         _write_result(out_dir, result)
         daily = result.daily_returns if result.daily_returns is not None else pd.DataFrame()

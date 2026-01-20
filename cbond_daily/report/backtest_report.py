@@ -13,6 +13,7 @@ from cbond_daily.backtest.execution import apply_twap_bps
 from cbond_daily.core.config import load_config_file, parse_date
 from cbond_daily.core.naming import build_factor_col
 from cbond_daily.data.io import read_dwd_daily, read_dws_factors_daily
+from cbond_daily.models.score_io import load_scores_by_date
 
 
 def _latest_run_dir(base: Path) -> Path | None:
@@ -154,32 +155,49 @@ def _render_report(
     sell_col: str,
     bps: float,
     bins: int,
+    score_source: str = "internal",
+    score_path: str | None = None,
 ) -> None:
     ic_records: list[dict] = []
     bin_records: list[dict] = []
     bin_time_records: list[dict] = []
 
-    factor_dates = _available_factor_dates(dws_root)
-    cols = [item["col"] for item in factor_items]
-    static_weights = pd.Series([item["w"] for item in factor_items], index=cols, dtype=float)
-    weight_dates, weights_map = _load_weights_history(out_dir, cols)
+    use_scores = str(score_source or "internal").lower() == "file"
+    score_cache: dict[date, pd.DataFrame] = {}
+    if use_scores:
+        if not score_path:
+            raise ValueError("score_source=file requires score_path")
+        score_cache = load_scores_by_date(score_path)
+    else:
+        factor_dates = _available_factor_dates(dws_root)
+        cols = [item["col"] for item in factor_items]
+        static_weights = pd.Series([item["w"] for item in factor_items], index=cols, dtype=float)
+        weight_dates, weights_map = _load_weights_history(out_dir, cols)
 
     for day in pd.date_range(start, end, freq="D"):
         df = read_dwd_daily(dwd_root, day.date())
         if df.empty:
             continue
-        factor_day = _prev_available_date(factor_dates, day.date())
-        if factor_day is None:
-            continue
-        factors = read_dws_factors_daily(dws_root, factor_day)
-        if factors.empty:
-            continue
-        if "code" not in factors.columns:
-            raise KeyError("missing code column in factor data")
-        missing_factor_cols = [c for c in cols if c not in factors.columns]
-        if missing_factor_cols:
-            continue
-        merged = df.merge(factors[["code"] + cols], on="code", how="left")
+        if use_scores:
+            scores = score_cache.get(day.date(), pd.DataFrame())
+            if scores.empty:
+                continue
+            if "code" not in scores.columns or "score" not in scores.columns:
+                raise KeyError("score file must include code and score columns")
+            merged = df.merge(scores[["code", "score"]], on="code", how="left")
+        else:
+            factor_day = _prev_available_date(factor_dates, day.date())
+            if factor_day is None:
+                continue
+            factors = read_dws_factors_daily(dws_root, factor_day)
+            if factors.empty:
+                continue
+            if "code" not in factors.columns:
+                raise KeyError("missing code column in factor data")
+            missing_factor_cols = [c for c in cols if c not in factors.columns]
+            if missing_factor_cols:
+                continue
+            merged = df.merge(factors[["code"] + cols], on="code", how="left")
         missing_cols = [c for c in (buy_col, sell_col) if c not in merged.columns]
         if missing_cols:
             raise KeyError(f"missing price columns: {missing_cols}")
@@ -189,26 +207,34 @@ def _render_report(
             & (merged[buy_col] > 0)
             & (merged[sell_col] > 0)
         ]
-        if tradable.empty:
-            continue
-        weights = _weights_for_day(
-            day.date(),
-            weight_dates=weight_dates,
-            weights_map=weights_map,
-            default_weights=static_weights,
-        )
-        work = tradable[cols].copy().apply(_zscore)
-        valid_mask = work.notna()
-        denom = valid_mask.mul(weights.abs(), axis=1).sum(axis=1)
-        weighted = work.mul(weights, axis=1).sum(axis=1)
-        composite = weighted.where(denom > 0).div(denom)
-        if composite.isna().all():
-            continue
-        tradable = tradable.copy()
-        tradable["composite_factor"] = composite
-        returns = _calc_daily_return(tradable, buy_col, sell_col, bps)
-
-        factors_vals = tradable["composite_factor"]
+        if use_scores:
+            tradable = tradable[tradable["score"].notna()]
+            if tradable.empty:
+                continue
+            tradable = tradable.copy()
+            tradable["composite_factor"] = tradable["score"].astype(float)
+            returns = _calc_daily_return(tradable, buy_col, sell_col, bps)
+            factors_vals = tradable["composite_factor"]
+        else:
+            if tradable.empty:
+                continue
+            weights = _weights_for_day(
+                day.date(),
+                weight_dates=weight_dates,
+                weights_map=weights_map,
+                default_weights=static_weights,
+            )
+            work = tradable[cols].copy().apply(_zscore)
+            valid_mask = work.notna()
+            denom = valid_mask.mul(weights.abs(), axis=1).sum(axis=1)
+            weighted = work.mul(weights, axis=1).sum(axis=1)
+            composite = weighted.where(denom > 0).div(denom)
+            if composite.isna().all():
+                continue
+            tradable = tradable.copy()
+            tradable["composite_factor"] = composite
+            returns = _calc_daily_return(tradable, buy_col, sell_col, bps)
+            factors_vals = tradable["composite_factor"]
         ic = factors_vals.corr(returns, method="pearson")
         rank_ic = _rank_ic(factors_vals, returns)
         ic_records.append(
@@ -404,6 +430,8 @@ def run_backtest_report() -> None:
     sell_col = cfg["sell_twap_col"]
     bps = float(cfg["twap_bps"])
     bins = int(cfg.get("ic_bins", 20))
+    score_source = cfg.get("score_source", "internal")
+    score_path = cfg.get("score_path")
 
     signals = cfg.get("signals", [])
     if not signals:
@@ -419,10 +447,10 @@ def run_backtest_report() -> None:
     for signal in signals:
         signal_name = signal.get("name") or "signal"
         items = signal.get("items", [])
-        if not items:
+        if not items and str(score_source or "internal").lower() != "file":
             continue
         factor_items = []
-        for it in items:
+        for it in items or []:
             col = build_factor_col(it["name"], it.get("params"))
             factor_items.append({"col": col, "w": float(it.get("w", 0.0))})
         out_dir = run_dir / signal_name
@@ -437,5 +465,7 @@ def run_backtest_report() -> None:
             sell_col=sell_col,
             bps=bps,
             bins=bins,
+            score_source=score_source,
+            score_path=score_path,
         )
     print(f"saved: {run_dir}")

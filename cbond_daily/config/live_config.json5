@@ -1,12 +1,12 @@
 {
   start: "2026-01-12",
-  target: "2026-01-15",
-  raw_full_refresh: false,
-  cleaned_full_refresh: false,
+  target: "2026-01-20",
+  raw_full_refresh: true,
+  cleaned_full_refresh: true,
   factors_overwrite: true,
   signal_name: "combo_default",
   batch_id: "Live",
-  db_write: false,
+  db_write: true,
   db_table: "quant_factor_dev.researcher_gswzif.d_0001",
   db_mode: "replace_date",
   factors: [ 

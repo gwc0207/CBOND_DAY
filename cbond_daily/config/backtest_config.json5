@@ -1,5 +1,5 @@
 {
-  start: "2025-01-01",
+  start: "2026-01-01",
   end: "2026-01-15",
   min_count: 10,
   max_weight: 0.05,
@@ -12,9 +12,12 @@
   batch_id: "Backtest",
   bin_source: "auto",
   bin_top_k: 2,
+  bin_lookback_days: 60,
+  score_source: "internal",
+  score_path: "",
   weight_source: "regression",
   regression_cfg: { 
-      method: "ridge", ridge_alpha: 2.0, lookback_days: 15, 
+      method: "ridge", ridge_alpha: 2.0, lookback_days: 10, 
       refit_freq: 1, min_samples: 500, fit_intercept: true, 
       include_cost_in_label: true, max_weight: 3.0, 
       normalize: "l1", fallback: "manual" 

@@ -9,6 +9,7 @@ import pandas as pd
 import numpy as np
 
 from cbond_daily.data.io import read_dwd_daily, read_dws_factors_daily, read_trading_calendar
+from cbond_daily.models.score_io import load_scores_by_date
 from .execution import apply_twap_bps
 from .weight_fit import fit_linear_weights
 
@@ -140,6 +141,63 @@ def _select_bins_by_mean_return(
         try:
             bins_cat = pd.qcut(
                 tradable["composite_factor"],
+                bin_count,
+                labels=False,
+                duplicates="drop",
+            )
+        except ValueError:
+            continue
+        if bins_cat.dropna().empty:
+            continue
+        buy_px = apply_twap_bps(tradable[buy_twap_col], twap_bps, side="buy")
+        sell_px = apply_twap_bps(tradable[sell_twap_col], twap_bps, side="sell")
+        returns = (sell_px - buy_px) / buy_px
+        for bin_id in bins_cat.dropna().unique():
+            mask = bins_cat == bin_id
+            if mask.sum() == 0:
+                continue
+            per_bin_returns.setdefault(int(bin_id), []).append(float(returns[mask].mean()))
+    if not per_bin_returns:
+        return []
+    mean_ret = {k: float(np.mean(v)) for k, v in per_bin_returns.items() if v}
+    ranked = sorted(mean_ret.items(), key=lambda x: x[1], reverse=True)
+    return [b for b, _ in ranked]
+
+
+def _select_bins_by_mean_return_scores(
+    *,
+    dwd_root: str,
+    score_cache: dict[date, pd.DataFrame],
+    train_days: list[date],
+    buy_twap_col: str,
+    sell_twap_col: str,
+    twap_bps: float,
+    bin_count: int,
+) -> list[int]:
+    per_bin_returns: dict[int, list[float]] = {}
+    for day in train_days:
+        scores = score_cache.get(day, pd.DataFrame())
+        if scores.empty:
+            continue
+        df = read_dwd_daily(dwd_root, day)
+        if df.empty:
+            continue
+        merged = df.merge(scores[["code", "score"]], on="code", how="left")
+        missing_cols = [c for c in (buy_twap_col, sell_twap_col) if c not in merged.columns]
+        if missing_cols:
+            continue
+        tradable = merged[
+            merged[buy_twap_col].notna()
+            & merged[sell_twap_col].notna()
+            & (merged[buy_twap_col] > 0)
+            & (merged[sell_twap_col] > 0)
+        ]
+        tradable = tradable[tradable["score"].notna()]
+        if tradable.empty:
+            continue
+        try:
+            bins_cat = pd.qcut(
+                tradable["score"],
                 bin_count,
                 labels=False,
                 duplicates="drop",
@@ -376,7 +434,10 @@ def run_backtest_linear(
     regression_cfg: dict | None = None,
     bin_source: str = "manual",
     bin_top_k: int = 2,
+    bin_lookback_days: int = 60,
     weights_output_dir: Path | None = None,
+    score_source: str = "internal",
+    score_path: str | None = None,
 ) -> BacktestResult:
     result = BacktestResult()
     daily_records: list[dict] = []
@@ -387,9 +448,18 @@ def run_backtest_linear(
     start, end = _align_start_end(trading_days, start, end)
     day_list = [d for d in trading_days if start <= d <= end]
     dwd_cache = _load_dwd_cache(dwd_root, day_list)
-    factor_day_map = {day: _prev_available_date(factor_dates, day) for day in day_list}
-    factor_cache_days = sorted({d for d in factor_day_map.values() if d is not None})
-    factor_cache = _load_factor_cache(dws_root, factor_cache_days)
+    use_scores = str(score_source or "internal").lower() == "file"
+    factor_day_map: dict[date, date | None] = {}
+    factor_cache: dict[date, pd.DataFrame] = {}
+    score_cache: dict[date, pd.DataFrame] = {}
+    if use_scores:
+        if not score_path:
+            raise ValueError("score_source=file requires score_path")
+        score_cache = load_scores_by_date(score_path)
+    else:
+        factor_day_map = {day: _prev_available_date(factor_dates, day) for day in day_list}
+        factor_cache_days = sorted({d for d in factor_day_map.values() if d is not None})
+        factor_cache = _load_factor_cache(dws_root, factor_cache_days)
 
     cols = [item["col"] for item in factor_items]
     manual_weights = pd.Series([item["w"] for item in factor_items], index=cols, dtype=float)
@@ -404,30 +474,39 @@ def run_backtest_linear(
         if df.empty:
             diagnostics.append({"trade_date": day_date, "status": "skip", "reason": "missing_dwd"})
             continue
-        factor_day = factor_day_map.get(day_date)
-        if factor_day is None:
-            diagnostics.append({"trade_date": day_date, "status": "skip", "reason": "missing_factor"})
-            continue
-        factors = factor_cache.get(factor_day, pd.DataFrame())
-        if factors.empty:
-            diagnostics.append({"trade_date": day_date, "status": "skip", "reason": "missing_factor"})
-            continue
-        if "code" not in factors.columns:
-            raise KeyError("missing code column in factor data")
         if "trade_date" not in df.columns:
             df["trade_date"] = day_date
-        missing_factor_cols = [c for c in cols if c not in factors.columns]
-        if missing_factor_cols:
-            diagnostics.append(
-                {
-                    "trade_date": day_date,
-                    "status": "skip",
-                    "reason": "factor_col_missing",
-                    "missing": ",".join(missing_factor_cols),
-                }
-            )
-            continue
-        merged = df.merge(factors[["code"] + cols], on="code", how="left")
+        if use_scores:
+            scores = score_cache.get(day_date, pd.DataFrame())
+            if scores.empty:
+                diagnostics.append({"trade_date": day_date, "status": "skip", "reason": "missing_score"})
+                continue
+            if "code" not in scores.columns or "score" not in scores.columns:
+                raise KeyError("score file must include code and score columns")
+            merged = df.merge(scores[["code", "score"]], on="code", how="left")
+        else:
+            factor_day = factor_day_map.get(day_date)
+            if factor_day is None:
+                diagnostics.append({"trade_date": day_date, "status": "skip", "reason": "missing_factor"})
+                continue
+            factors = factor_cache.get(factor_day, pd.DataFrame())
+            if factors.empty:
+                diagnostics.append({"trade_date": day_date, "status": "skip", "reason": "missing_factor"})
+                continue
+            if "code" not in factors.columns:
+                raise KeyError("missing code column in factor data")
+            missing_factor_cols = [c for c in cols if c not in factors.columns]
+            if missing_factor_cols:
+                diagnostics.append(
+                    {
+                        "trade_date": day_date,
+                        "status": "skip",
+                        "reason": "factor_col_missing",
+                        "missing": ",".join(missing_factor_cols),
+                    }
+                )
+                continue
+            merged = df.merge(factors[["code"] + cols], on="code", how="left")
         missing_cols = [c for c in (buy_twap_col, sell_twap_col) if c not in merged.columns]
         if missing_cols:
             raise KeyError(f"missing price columns: {missing_cols}")
@@ -437,10 +516,12 @@ def run_backtest_linear(
             & (merged[buy_twap_col] > 0)
             & (merged[sell_twap_col] > 0)
         ]
+        if use_scores:
+            tradable = tradable[tradable["score"].notna()]
         if tradable.empty:
             diagnostics.append({"trade_date": day_date, "status": "skip", "reason": "no_tradable"})
             continue
-        if weight_source == "regression":
+        if weight_source == "regression" and not use_scores:
             cfg = regression_cfg or {}
             lookback_days = int(cfg.get("lookback_days", 60))
             refit_freq = int(cfg.get("refit_freq", 1))
@@ -504,22 +585,44 @@ def run_backtest_linear(
                     )
                     if len(ranked_bins) >= bin_top_k:
                         bin_select = ranked_bins[:bin_top_k]
-        work = tradable[cols].copy()
-        if normalize == "zscore":
-            work = work.apply(_zscore)
+        if use_scores:
+            tradable = tradable.copy()
+            tradable["composite_factor"] = tradable["score"].astype(float)
+            if tradable["composite_factor"].isna().all():
+                diagnostics.append(
+                    {"trade_date": day_date, "status": "skip", "reason": "composite_all_nan"}
+                )
+                continue
+            if bin_source == "auto":
+                train_days = [d for d in trading_days if d < day_date][-bin_lookback_days:]
+                ranked_bins = _select_bins_by_mean_return_scores(
+                    dwd_root=dwd_root,
+                    score_cache=score_cache,
+                    train_days=train_days,
+                    buy_twap_col=buy_twap_col,
+                    sell_twap_col=sell_twap_col,
+                    twap_bps=twap_bps,
+                    bin_count=bin_count,
+                )
+                if len(ranked_bins) >= bin_top_k:
+                    bin_select = ranked_bins[:bin_top_k]
         else:
-            raise ValueError(f"unknown normalize: {normalize}")
-        valid_mask = work.notna()
-        denom = valid_mask.mul(weights.abs(), axis=1).sum(axis=1)
-        weighted = work.mul(weights, axis=1).sum(axis=1)
-        composite = weighted.where(denom > 0).div(denom)
-        if composite.isna().all():
-            diagnostics.append(
-                {"trade_date": day_date, "status": "skip", "reason": "composite_all_nan"}
-            )
-            continue
-        tradable = tradable.copy()
-        tradable["composite_factor"] = composite
+            work = tradable[cols].copy()
+            if normalize == "zscore":
+                work = work.apply(_zscore)
+            else:
+                raise ValueError(f"unknown normalize: {normalize}")
+            valid_mask = work.notna()
+            denom = valid_mask.mul(weights.abs(), axis=1).sum(axis=1)
+            weighted = work.mul(weights, axis=1).sum(axis=1)
+            composite = weighted.where(denom > 0).div(denom)
+            if composite.isna().all():
+                diagnostics.append(
+                    {"trade_date": day_date, "status": "skip", "reason": "composite_all_nan"}
+                )
+                continue
+            tradable = tradable.copy()
+            tradable["composite_factor"] = composite
 
         try:
             bins_cat = pd.qcut(
