@@ -10,9 +10,9 @@
   ic_bins: 20,
   max_workers: 10,
   batch_id: "Backtest",
-  bin_source: "manual",
+  bin_source: "auto",
   bin_top_k: 2,
-  bin_lookback_days: 60,
+  bin_lookback_days: 10,
   score_path: "results/models/linear_combo_default/scores.csv",
   signals: [
     { name: "combo_default", bin_select: [2,8], normalize: "zscore", items: [

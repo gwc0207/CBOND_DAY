@@ -24,6 +24,14 @@ from cbond_daily.data.io import (
 from cbond_daily.factors.pipeline import run_factor_pipeline
 from cbond_daily.backtest.runner import run_backtest_linear
 from cbond_daily.core.naming import build_factor_col
+from cbond_daily.models.linear_score import run_linear_score, write_score_outputs
+
+
+def _load_model_config(path: Path) -> dict:
+    import json5
+
+    with path.open("r", encoding="utf-8") as handle:
+        return json5.load(handle) or {}
 
 
 def _parse_target(value: str | date) -> date:
@@ -156,6 +164,67 @@ def _build_factor_items(items: list[dict]) -> list[dict]:
     return factor_items
 
 
+def _build_scores(
+    *,
+    ods_root: str,
+    dwd_root: str,
+    dws_root: str,
+    start: date,
+    end: date,
+    model_cfg_path: Path,
+) -> str:
+    if not model_cfg_path.exists():
+        raise FileNotFoundError(f"model config not found: {model_cfg_path}")
+    model_cfg = _load_model_config(model_cfg_path)
+    factors = model_cfg.get("factors", [])
+    if not factors:
+        raise ValueError("model config missing factors")
+
+    result = run_linear_score(
+        ods_root=ods_root,
+        dwd_root=dwd_root,
+        dws_root=dws_root,
+        start=start,
+        end=end,
+        factors=factors,
+        label_cfg=model_cfg["label_cfg"],
+        regression_cfg=model_cfg.get("regression_cfg", {}),
+        weight_source=model_cfg.get("weight_source", "regression"),
+        normalize=model_cfg.get("normalize", "zscore"),
+    )
+
+    output_cfg = model_cfg.get("output", {})
+    score_path = Path(output_cfg.get("score_path", "results/models/scores.csv"))
+    weights_path = output_cfg.get("weights_path")
+    meta_path = output_cfg.get("meta_path")
+    overwrite = bool(model_cfg.get("overwrite", False))
+    if weights_path:
+        weights_path = Path(weights_path)
+    if meta_path:
+        meta_path = Path(meta_path)
+
+    meta_payload = {
+        "model_id": model_cfg.get("model_id"),
+        "model_type": model_cfg.get("model_type", "linear"),
+        "start": start,
+        "end": end,
+        "label_cfg": model_cfg.get("label_cfg"),
+        "factors": factors,
+        "weight_source": model_cfg.get("weight_source", "regression"),
+        "regression_cfg": model_cfg.get("regression_cfg"),
+    }
+
+    write_score_outputs(
+        result=result,
+        score_path=score_path,
+        weights_path=weights_path,
+        meta_path=meta_path,
+        meta_payload=meta_payload,
+        overwrite=overwrite,
+    )
+    return str(score_path)
+
+
 def _write_trades(out_dir: Path, positions: pd.DataFrame, trade_day: date) -> None:
     if positions is None or positions.empty:
         return
@@ -279,12 +348,23 @@ def main() -> None:
         sell_twap_col=backtest_cfg.get("sell_twap_col"),
     )
 
+    model_cfg_path = Path(
+        live_cfg.get("model_config", "cbond_daily/config/models/linear_combo_default.json5")
+    )
+    score_path = _build_scores(
+        ods_root=ods_root,
+        dwd_root=dwd_root,
+        dws_root=dws_root,
+        start=start,
+        end=signal_day,
+        model_cfg_path=model_cfg_path,
+    )
+
     signal = _pick_signal(backtest_cfg, signal_name)
     items = signal.get("items", [])
     bin_select = signal.get("bin_select", [])
     if not bin_select:
         raise ValueError("signal missing bin_select")
-    score_path = backtest_cfg.get("score_path")
     if not items and not score_path:
         raise ValueError("signal missing items and score_path is not set")
     factor_items = _build_factor_items(items) if items else []

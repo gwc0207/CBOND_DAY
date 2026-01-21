@@ -1,8 +1,8 @@
 {
   "model_id": "linear_combo_default",
   "model_type": "linear",
-  "start": "2025-01-01",
-  "end": "2026-01-15",
+  "start": "2026-01-16",
+  "end": "2026-01-20",
   "label_cfg": {
     "buy_twap_col": "twap_0945_1000",
     "sell_twap_col": "twap_1430_1442",
