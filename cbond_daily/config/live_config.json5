@@ -1,6 +1,6 @@
 {
   start: "2026-01-16",
-  target: "2026-01-23",
+  target: "2026-01-27",
   raw_full_refresh: true,
   cleaned_full_refresh: true,
   factors_overwrite: true,
