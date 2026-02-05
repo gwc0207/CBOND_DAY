@@ -11,3 +11,4 @@ from .defs import rolling_ret_vol  # noqa: F401
 from .defs import stock_trend_delta  # noqa: F401
 from .defs import trend_lagged_prem_repair  # noqa: F401
 from .defs import trend_prem_lag_simple  # noqa: F401
+from .defs import cvl  # noqa: F401
