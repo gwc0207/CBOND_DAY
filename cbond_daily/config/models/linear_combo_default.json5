@@ -3,8 +3,8 @@
   model_type: "linear",
   weight_source: "regression",
   normalize: "zscore",
-  start: "2025-01-01",
-  end: "2026-01-15",
+  start: "2026-01-01",
+  end: "2026-02-12",
   overwrite: true,
   label_cfg: {
     buy_twap_col: "twap_0945_1000",

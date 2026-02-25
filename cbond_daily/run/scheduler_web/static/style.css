@@ -1,0 +1,100 @@
+﻿body {
+  background: #f8f9fb;
+}
+
+.log-box {
+  height: 520px;
+  overflow-y: auto;
+  background: #f7f7f7;
+  border: 1px solid #ddd;
+  padding: 8px;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.sync-status {
+  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid #e3e3e3;
+  background: #eef2f7;
+}
+
+.config-list {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.config-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px 16px;
+}
+
+.config-item {
+  border: 1px solid #e6e6e6;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fff;
+}
+
+.config-item .label {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+.config-item.readonly {
+  background: #f5f6f8;
+  color: #6c757d;
+}
+
+.process-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.process-card {
+  border: 1px solid #e6e6e6;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #fff;
+  font-size: 12px;
+}
+
+.process-card .pid {
+  font-weight: 600;
+}
+
+.state-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.state-item {
+  border: 1px solid #e6e6e6;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fff;
+}
+
+.state-label {
+  font-size: 12px;
+  color: #6c757d;
+  margin-bottom: 4px;
+}
+
+.state-value {
+  font-weight: 600;
+  font-size: 14px;
+  word-break: break-word;
+}
+
+#state-raw-panel .log-box {
+  height: 240px;
+}

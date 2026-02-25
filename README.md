@@ -23,6 +23,12 @@ python -m cbond_daily.run.backtest
 python -m cbond_daily.run.live_daily
 ```
 
+Live Scheduler（按时间自动执行）：
+```bash
+python -m cbond_daily.run.live_scheduler
+```
+配置在 `cbond_daily/config/live_config.json5`，可调整 `schedule.time`。
+
 ## 数据层与目录
 - raw data：原始同步数据（`D:/cbond_daily/raw_data`）
 - cleaned data：清洗后的日级宽表（`D:/cbond_daily/clean_data/YYYY-MM/YYYYMMDD.parquet`）
