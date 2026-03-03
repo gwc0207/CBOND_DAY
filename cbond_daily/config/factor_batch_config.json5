@@ -1,6 +1,6 @@
 {
   start: "2026-01-01",
-  end: "2026-02-11",
+  end: "2026-02-25",
   min_count: 1,
   max_weight: 0.05,
   buy_twap_col: "twap_0945_1000",
@@ -30,8 +30,10 @@
     // { name: "carry_cheapness", params: { use_duration: true, alpha: 0.2 } },
     // { name: "carry_cheapness", params: { use_duration: true, alpha: 0.5 } },
     // { name: "carry_cheapness", params: { use_duration: true, alpha: 1.0 } },
+    { name: "conv_premium", params: {} },
+    { name: "trend_prem_lag_simple", params: { mom_win: 20, prem_chg_win: 5, liq_rank_min: 0.5 } },
     { name: "cvl", params: { w_prem: 1.0, w_ytm: 1.0, w_liq: 0.6 } },
-    { name: "stock_trend_delta", params: { mom_window: 20, stock_close_col: "deriv_stock_close_price", conv_value_col: "base_conv_value", pure_redemption_col: "base_pure_redemption_value" } },
+    // { name: "stock_trend_delta", params: { mom_window: 20, stock_close_col: "deriv_stock_close_price", conv_value_col: "base_conv_value", pure_redemption_col: "base_pure_redemption_value" } },
   ],
   signals: [ 
     // { name: "intraday_momentum", params: {}, bin_select: [3] },
@@ -50,8 +52,9 @@
     // { name: "carry_cheapness", params: { use_duration: true, alpha: 0.2 }, bin_select: [0] },
     // { name: "carry_cheapness", params: { use_duration: true, alpha: 0.5 }, bin_select: [0] },
     // { name: "carry_cheapness", params: { use_duration: true, alpha: 1.0 }, bin_select: [0] },
+    { name: "conv_premium", params: {}, bin_select: [0] },
+    { name: "trend_prem_lag_simple", params: { mom_win: 20, prem_chg_win: 5, liq_rank_min: 0.5 }, bin_select: [0] },
     { name: "cvl", params: { w_prem: 1.0, w_ytm: 1.0, w_liq: 0.6 }, bin_select: [0] },
-    { name: "stock_trend_delta", params: { mom_window: 20, stock_close_col: "deriv_stock_close_price", conv_value_col: "base_conv_value", pure_redemption_col: "base_pure_redemption_value" }, bin_select: [0] },
   ],
   batch_id: "Single_Factor",
 }

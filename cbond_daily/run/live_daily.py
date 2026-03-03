@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import sys
 from datetime import date, timedelta
 from pathlib import Path
@@ -294,16 +295,30 @@ def _write_trades_to_db(
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--start", type=str, default=None)
+    parser.add_argument("--target", type=str, default=None)
+    args = parser.parse_args()
+
     paths_cfg = load_config_file("paths")
     raw_cfg = load_config_file("raw_data")
     cleaned_cfg = load_config_file("cleaned_data")
     backtest_cfg = load_config_file("backtest")
     live_cfg = load_config_file("live")
 
-    start = parse_date(live_cfg["start"])
-    target = _parse_target(live_cfg.get("target", "today"))
+    start = parse_date(args.start) if args.start else parse_date(live_cfg["start"])
+    target = _parse_target(args.target) if args.target else _parse_target(live_cfg.get("target", "today"))
     signal_name = live_cfg.get("signal_name")
     batch_id = live_cfg.get("batch_id", "Live")
+    model_cfg_path = Path(
+        live_cfg.get("model_config", "cbond_daily/config/models/linear_combo_default.json5")
+    )
+    if not model_cfg_path.exists():
+        raise FileNotFoundError(f"model config not found: {model_cfg_path}")
+    model_cfg = _load_model_config(model_cfg_path)
+    model_factors = model_cfg.get("factors", [])
+    if not model_factors:
+        raise ValueError("model config missing factors")
 
     ods_root = paths_cfg["ods_root"]
     dwd_root = paths_cfg["dwd_root"]
@@ -340,16 +355,12 @@ def main() -> None:
         dws_root=dws_root,
         start=start,
         end=signal_day,
-        factor_defs=live_cfg.get("factors", []),
+        factor_defs=model_factors,
         overwrite=bool(live_cfg.get("factors_overwrite", False)),
         update_only=live_cfg.get("factors_update_only"),
         nan_filter_mode=live_cfg.get("nan_filter_mode", "none"),
         buy_twap_col=backtest_cfg.get("buy_twap_col"),
         sell_twap_col=backtest_cfg.get("sell_twap_col"),
-    )
-
-    model_cfg_path = Path(
-        live_cfg.get("model_config", "cbond_daily/config/models/linear_combo_default.json5")
     )
     score_path = _build_scores(
         ods_root=ods_root,

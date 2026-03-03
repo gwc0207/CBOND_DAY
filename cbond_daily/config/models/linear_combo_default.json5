@@ -3,8 +3,8 @@
   model_type: "linear",
   weight_source: "regression",
   normalize: "zscore",
-  start: "2026-01-01",
-  end: "2026-02-12",
+  start: "2025-06-01",
+  end: "2026-02-14",
   overwrite: true,
   label_cfg: {
     buy_twap_col: "twap_0945_1000",
@@ -39,5 +39,6 @@
   factors: [
     { name: "conv_premium", params: {}, w: 1.0 },
     { name: "trend_prem_lag_simple", params: { mom_win: 20, prem_chg_win: 5, liq_rank_min: 0.5 }, w: 1.0 },
+    { name: "cvl", params: { w_prem: 1.0, w_ytm: 1.0, w_liq: 0.6 }, w: 1.0 },
   ],
 }
