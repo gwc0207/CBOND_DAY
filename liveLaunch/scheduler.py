@@ -15,12 +15,15 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from cbond_daily.core.config import load_config_file
+from cbond_daily.core.config import load_config_file, parse_date
+from cbond_daily.data.extract import DATE_COLUMNS, fetch_table
 from cbond_daily.data.io import read_trading_calendar
+from cbond_daily.data.io import get_latest_table_date, table_has_data, write_table_by_date
 
 WIN_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-IDLE_POLL_SECONDS = 300
+IDLE_POLL_SECONDS = 30
 RUNNING_POLL_SECONDS = 5
+HEARTBEAT_LOG_SECONDS = 300
 
 
 def _read_json(path: Path) -> dict:
@@ -86,8 +89,15 @@ def _next_trading_day(open_days: list[date], run_day: date) -> date:
     return run_day + timedelta(days=1)
 
 
+def _prev_trading_day(open_days: list[date], run_day: date) -> date | None:
+    for d in reversed(open_days):
+        if d < run_day:
+            return d
+    return None
+
+
 def _day_tag(now_tz: datetime) -> str:
-    return now_tz.strftime("%Y%m%d")
+    return now_tz.strftime("%Y-%m-%d")
 
 
 def _append_log(results_root: Path, now_tz: datetime, msg: str) -> None:
@@ -102,6 +112,39 @@ def _append_log(results_root: Path, now_tz: datetime, msg: str) -> None:
 def _stop_flag_path(results_root: Path, now_tz: datetime) -> Path:
     day_dir = results_root / "live" / _day_tag(now_tz)
     return day_dir / "STOP"
+
+
+def _run_raw_incremental_sync(
+    *,
+    ods_root: str,
+    start: date,
+    end: date,
+    full_refresh: bool,
+    tables: list[str],
+    log_fn,
+) -> dict[str, int]:
+    synced_rows: dict[str, int] = {}
+    for table in tables:
+        last_date = None if full_refresh else get_latest_table_date(ods_root, table)
+        date_based = table in DATE_COLUMNS
+        if date_based:
+            fetch_start = max(start, last_date + timedelta(days=1)) if last_date else start
+            if fetch_start > end:
+                log_fn(f"[morning_sync] skip {table}: up to date")
+                continue
+            df = fetch_table(table, start=str(fetch_start), end=str(end))
+        else:
+            if not full_refresh and table_has_data(ods_root, table):
+                log_fn(f"[morning_sync] skip {table}: already exists")
+                continue
+            df = fetch_table(table)
+        if df.empty:
+            log_fn(f"[morning_sync] skip {table}: empty result")
+            continue
+        write_table_by_date(df, ods_root, table, date_col="trade_date")
+        synced_rows[table] = int(len(df))
+        log_fn(f"[morning_sync] synced {table}: rows={len(df)}")
+    return synced_rows
 
 
 def main() -> None:
@@ -135,11 +178,17 @@ def main() -> None:
     _write_json(state_path, {"status": "booting", "heartbeat": datetime.now().isoformat(timespec="seconds")})
 
     last_status = ""
+    last_heartbeat_log_ts = 0.0
     while True:
         live_cfg = load_config_file("live")
+        raw_cfg = load_config_file("raw_data")
         schedule = live_cfg.get("schedule", {}) or {}
         time_str = str(schedule.get("time", "17:00"))
         hour, minute = _parse_time(time_str)
+        morning_cfg = live_cfg.get("morning_sync", {}) or {}
+        morning_enable = bool(morning_cfg.get("enable", True))
+        morning_time_str = str(morning_cfg.get("time", "09:00"))
+        morning_hour, morning_minute = _parse_time(morning_time_str)
         tz_name = str(schedule.get("timezone", "Asia/Shanghai"))
         tz = pytz.timezone(tz_name)
         now_tz = datetime.now(tz)
@@ -147,10 +196,25 @@ def main() -> None:
         today = now_tz.date()
         open_days = _load_open_days(ods_root)
         target = _next_trading_day(open_days, today)
+        prev_open_day = _prev_trading_day(open_days, today)
 
         st = _read_json(state_path)
         last_target_run = st.get("last_target_run")
+        last_morning_sync_day = st.get("last_morning_sync_day")
         stop_flag = _stop_flag_path(results_root, now_tz)
+
+        def log_heartbeat(status: str, extra_msg: str = "", *, force: bool = False) -> None:
+            nonlocal last_heartbeat_log_ts
+            now_ts = time.time()
+            if not force and (now_ts - last_heartbeat_log_ts) < HEARTBEAT_LOG_SECONDS:
+                return
+            suffix = f" {extra_msg}" if extra_msg else ""
+            _append_log(
+                results_root,
+                now_tz,
+                f"[heartbeat] status={status} today={today} target={target}{suffix}",
+            )
+            last_heartbeat_log_ts = now_ts
 
         def write_status(status: str, extra: dict | None = None, *, force_log: bool = False) -> None:
             payload = {
@@ -167,18 +231,10 @@ def main() -> None:
             _write_json(state_path, payload)
             nonlocal last_status
             if force_log or status != last_status:
-                _append_log(
-                    results_root,
-                    now_tz,
-                    f"[heartbeat] status={status} today={today} target={target}",
-                )
+                log_heartbeat(status, force=True)
                 last_status = status
             else:
-                _append_log(
-                    results_root,
-                    now_tz,
-                    f"[heartbeat] status={status} today={today} target={target}",
-                )
+                log_heartbeat(status)
 
         if not bool(schedule.get("enable", False)):
             write_status("disabled")
@@ -188,6 +244,77 @@ def main() -> None:
         if stop_flag.exists():
             write_status("stopped_by_flag")
             time.sleep(IDLE_POLL_SECONDS)
+            continue
+
+        morning_due = (
+            morning_enable
+            and prev_open_day is not None
+            and (
+                (now_tz.hour > morning_hour)
+                or (now_tz.hour == morning_hour and now_tz.minute >= morning_minute)
+            )
+            and last_morning_sync_day != str(today)
+        )
+        if morning_due:
+            try:
+                morning_start = parse_date(str(live_cfg.get("start", str(prev_open_day))))
+            except Exception:
+                morning_start = prev_open_day
+            write_status(
+                "running_morning_sync",
+                {
+                    "morning_sync_time": morning_time_str,
+                    "morning_sync_start": str(morning_start),
+                    "morning_sync_end": str(prev_open_day),
+                },
+                force_log=True,
+            )
+            _append_log(
+                results_root,
+                now_tz,
+                f"[morning_sync_start] today={today} start={morning_start} end={prev_open_day}",
+            )
+            sync_ok = True
+            sync_rows: dict[str, int] = {}
+            err_msg = ""
+            try:
+                sync_rows = _run_raw_incremental_sync(
+                    ods_root=ods_root,
+                    start=morning_start,
+                    end=prev_open_day,
+                    full_refresh=bool(raw_cfg.get("full_refresh", False)),
+                    tables=list(raw_cfg.get("sync_tables", [])),
+                    log_fn=lambda msg: _append_log(results_root, now_tz, msg),
+                )
+            except Exception as exc:
+                sync_ok = False
+                err_msg = f"{type(exc).__name__}: {exc}"
+                _append_log(results_root, now_tz, f"[morning_sync_error] {err_msg}")
+
+            st_after = _read_json(state_path)
+            done = {
+                **st_after,
+                "last_morning_sync_day": str(today),
+                "last_morning_sync_start": str(morning_start),
+                "last_morning_sync_end": str(prev_open_day),
+                "last_morning_sync_time": datetime.now().isoformat(timespec="seconds"),
+                "last_morning_sync_rows": sync_rows,
+                "last_morning_sync_ok": bool(sync_ok),
+                "heartbeat": datetime.now().isoformat(timespec="seconds"),
+            }
+            if not sync_ok:
+                done["last_morning_sync_error"] = err_msg
+                done["status"] = "morning_sync_failed"
+            else:
+                done["status"] = "morning_sync_done"
+                done.pop("last_morning_sync_error", None)
+            _write_json(state_path, done)
+            _append_log(
+                results_root,
+                now_tz,
+                f"[morning_sync_end] ok={sync_ok} end={prev_open_day} synced_tables={len(sync_rows)}",
+            )
+            time.sleep(2)
             continue
 
         if last_target_run == str(target):
@@ -254,11 +381,7 @@ def main() -> None:
                         "worker_pid": int(proc.pid),
                     },
                 )
-                _append_log(
-                    results_root,
-                    datetime.now(tz),
-                    f"[heartbeat] status=running_live today={today} target={target} worker_pid={proc.pid}",
-                )
+                log_heartbeat("running_live", f"worker_pid={proc.pid}")
                 if rc is not None:
                     break
                 time.sleep(RUNNING_POLL_SECONDS)

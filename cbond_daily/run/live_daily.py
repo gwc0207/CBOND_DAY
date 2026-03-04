@@ -13,7 +13,14 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from cbond_daily.core.config import load_config_file, parse_date
 from cbond_daily.data.dwd_builder import build_dwd_daily
-from cbond_daily.data.extract import DATE_COLUMNS, connect, fetch_table
+from cbond_daily.data.extract import (
+    DATE_COLUMNS,
+    connect,
+    fetch_table,
+    get_db_backend,
+    normalize_table_name,
+    resolve_table_target,
+)
 from cbond_daily.data.io import (
     get_latest_dwd_date,
     get_latest_dws_date,
@@ -279,17 +286,28 @@ def _write_trades_to_db(
     ]
     payload = work[cols]
 
+    backend = get_db_backend()
+    db_override, resolved_table = resolve_table_target(table)
+    table_name = normalize_table_name(resolved_table)
+    marker = "%s" if backend == "postgres" else "?"
     insert_sql = (
-        f"INSERT INTO {table} "
+        f"INSERT INTO {table_name} "
         "(instrument_code, exchange_code, trade_date, factor_value, weight, rank) "
-        "VALUES (?, ?, ?, ?, ?, ?)"
+        f"VALUES ({marker}, {marker}, {marker}, {marker}, {marker}, {marker})"
     )
 
-    with connect() as conn:
+    with connect(database=db_override) as conn:
         cursor = conn.cursor()
         if mode == "replace_date":
-            cursor.execute(f"DELETE FROM {table} WHERE trade_date = ?", trade_day)
-        cursor.fast_executemany = True
+            if backend == "postgres":
+                cursor.execute(f"DELETE FROM {table_name} WHERE trade_date = %s", (trade_day,))
+            else:
+                cursor.execute(f"DELETE FROM {table_name} WHERE trade_date = ?", trade_day)
+        if backend != "postgres":
+            try:
+                cursor.fast_executemany = True
+            except Exception:
+                pass
         cursor.executemany(insert_sql, payload.values.tolist())
         conn.commit()
 

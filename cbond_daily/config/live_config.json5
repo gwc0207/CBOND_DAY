@@ -10,5 +10,6 @@
   "db_table": "quant_factor_dev.researcher_gswzif.d_0001",
   "db_mode": "replace_date",
   "model_config": "cbond_daily/config/models/linear_combo_default.json5",
-  "schedule": { "enable": true, "time": "17:30", "timezone": "Asia/Shanghai" }
+  "schedule": { "enable": true, "time": "17:30", "timezone": "Asia/Shanghai" },
+  "morning_sync": { "enable": true, "time": "09:30" }
 }

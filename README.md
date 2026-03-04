@@ -25,7 +25,7 @@ python -m cbond_daily.run.live_daily
 
 Live Scheduler（按时间自动执行）：
 ```bash
-python -m cbond_daily.run.live_scheduler
+python -m liveLaunch.scheduler
 ```
 配置在 `cbond_daily/config/live_config.json5`，可调整 `schedule.time`。
 

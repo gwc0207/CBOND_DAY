@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import json
+import math
 import os
+import re
 import signal
 import subprocess
 import sys
 import threading
 import time
-from datetime import datetime
+from datetime import date, datetime, time as dt_time
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -18,7 +21,9 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from flask import Flask, jsonify, render_template, request
 
+from cbond_daily.backtest.execution import apply_twap_bps
 from cbond_daily.core.config import load_config_file
+from cbond_daily.data.io import read_table_range, read_trading_calendar
 
 try:
     import psutil
@@ -83,9 +88,22 @@ def _results_live_root() -> Path:
     return Path(paths_cfg["results"]) / "live"
 
 
+def _to_iso_day_tag(day: str | None = None) -> str:
+    if day is None:
+        return datetime.now().strftime("%Y-%m-%d")
+    text = str(day).strip()
+    if not text:
+        return datetime.now().strftime("%Y-%m-%d")
+    if len(text) == 10 and text[4] == "-" and text[7] == "-":
+        return datetime.strptime(text, "%Y-%m-%d").strftime("%Y-%m-%d")
+    if len(text) == 8 and text.isdigit():
+        return datetime.strptime(text, "%Y%m%d").strftime("%Y-%m-%d")
+    raise ValueError(f"invalid day: {day}")
+
+
 def _resolve_log_day_root(day: str | None = None) -> Path:
     root = _results_live_root()
-    day_tag = day or datetime.now().strftime("%Y%m%d")
+    day_tag = _to_iso_day_tag(day)
     return root / day_tag
 
 
@@ -102,14 +120,99 @@ def _read_latest_log(day: str | None = None) -> tuple[str, list[str]]:
     return str(latest), lines
 
 
-def _day_tag_to_iso(day: str) -> str:
-    return f"{day[:4]}-{day[4:6]}-{day[6:8]}"
+_TWAP_COL_RE = re.compile(r"^twap_(\d{4})_(\d{4})$")
+
+
+def _parse_hhmm_token(token: str | None) -> dt_time | None:
+    if not token:
+        return None
+    text = str(token).strip()
+    if len(text) != 4 or not text.isdigit():
+        return None
+    hh = int(text[:2])
+    mm = int(text[2:])
+    if not (0 <= hh <= 23 and 0 <= mm <= 59):
+        return None
+    return dt_time(hour=hh, minute=mm)
+
+
+def _parse_twap_start_time(col: str | None) -> dt_time | None:
+    if not col:
+        return None
+    m = _TWAP_COL_RE.match(str(col).strip())
+    if not m:
+        return None
+    return _parse_hhmm_token(m.group(1))
+
+
+def _load_model_label_cfg(live_cfg: dict) -> dict:
+    model_cfg_ref = live_cfg.get("model_config")
+    if not model_cfg_ref:
+        return {}
+    model_cfg_text = str(model_cfg_ref).strip()
+    # Prefer explicit file path (e.g. cbond_daily/config/models/linear_combo_default.json5).
+    if model_cfg_text.lower().endswith((".json5", ".json", ".yaml", ".yml")):
+        path = Path(model_cfg_text)
+        if not path.is_absolute():
+            path = PROJECT_ROOT / path
+        if path.exists():
+            try:
+                suffix = path.suffix.lower()
+                if suffix == ".json5":
+                    import json5
+
+                    model_cfg = json5.loads(path.read_text(encoding="utf-8"))
+                elif suffix in (".yaml", ".yml"):
+                    import yaml
+
+                    model_cfg = yaml.safe_load(path.read_text(encoding="utf-8"))
+                else:
+                    model_cfg = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(model_cfg, dict):
+                    label_cfg = model_cfg.get("label_cfg")
+                    return label_cfg if isinstance(label_cfg, dict) else {}
+            except Exception:
+                return {}
+    try:
+        model_cfg = load_config_file(model_cfg_text)
+    except Exception:
+        return {}
+    if not isinstance(model_cfg, dict):
+        return {}
+    label_cfg = model_cfg.get("label_cfg")
+    return label_cfg if isinstance(label_cfg, dict) else {}
+
+
+def _now_in_live_tz(live_cfg: dict) -> datetime:
+    schedule = live_cfg.get("schedule", {}) if isinstance(live_cfg, dict) else {}
+    tz_name = "Asia/Shanghai"
+    if isinstance(schedule, dict):
+        tz_name = str(schedule.get("timezone", "Asia/Shanghai"))
+    try:
+        return datetime.now(ZoneInfo(tz_name))
+    except Exception:
+        return datetime.now()
+
+
+def _should_show_holdings(day_tag: str, live_cfg: dict) -> bool:
+    now_tz = _now_in_live_tz(live_cfg)
+    today_tag = now_tz.strftime("%Y-%m-%d")
+    if _to_iso_day_tag(day_tag) != today_tag:
+        return True
+    label_cfg = _load_model_label_cfg(live_cfg)
+    buy_start = _parse_twap_start_time(label_cfg.get("buy_twap_col"))
+    sell_start = _parse_twap_start_time(label_cfg.get("sell_twap_col"))
+    now_time = now_tz.time()
+    if buy_start is not None and now_time < buy_start:
+        return False
+    if sell_start is not None and now_time >= sell_start:
+        return False
+    return True
 
 
 def _read_holdings(day: str | None = None) -> list[dict]:
-    day_tag = day or datetime.now().strftime("%Y%m%d")
-    iso_day = _day_tag_to_iso(day_tag)
-    live_day_root = _results_live_root() / iso_day
+    day_tag = _to_iso_day_tag(day)
+    live_day_root = _results_live_root() / day_tag
     if not live_day_root.exists():
         return []
     files = sorted(live_day_root.glob("**/trade_list.csv"))
@@ -134,18 +237,251 @@ def _read_holdings(day: str | None = None) -> list[dict]:
     return rows
 
 
+def _read_trade_list(day: date) -> pd.DataFrame:
+    live_day_root = _results_live_root() / f"{day:%Y-%m-%d}"
+    if not live_day_root.exists():
+        return pd.DataFrame()
+    files = sorted(live_day_root.glob("**/trade_list.csv"))
+    if not files:
+        return pd.DataFrame()
+    try:
+        df = pd.read_csv(files[-1])
+    except Exception:
+        return pd.DataFrame()
+    if df.empty or "code" not in df.columns:
+        return pd.DataFrame()
+    work = df.copy()
+    if "weight" not in work.columns:
+        work["weight"] = pd.NA
+    return work[["code", "weight"]]
+
+
+def _parse_day_to_date(day: str | None) -> date:
+    if not day:
+        return datetime.now().date()
+    text = str(day).strip()
+    if len(text) == 8 and text.isdigit():
+        return datetime.strptime(text, "%Y%m%d").date()
+    if len(text) == 10 and text[4] == "-" and text[7] == "-":
+        return datetime.strptime(text, "%Y-%m-%d").date()
+    raise ValueError(f"invalid day: {day}")
+
+
+def _read_twap_daily(ods_root: str | Path, day: date) -> pd.DataFrame:
+    df = read_table_range(ods_root, "market_cbond.daily_twap", day, day)
+    if df.empty:
+        return df
+    if "instrument_code" in df.columns and "exchange_code" in df.columns:
+        df = df.copy()
+        df["code"] = df["instrument_code"].astype(str) + "." + df["exchange_code"].astype(str)
+    return df
+
+
+def _load_open_days(ods_root: str | Path) -> list[date]:
+    cal = read_trading_calendar(ods_root)
+    if cal.empty or "calendar_date" not in cal.columns:
+        return []
+    work = cal.copy()
+    if "is_open" in work.columns:
+        work = work[work["is_open"].astype(bool)]
+    days = pd.to_datetime(work["calendar_date"], errors="coerce").dt.date.dropna().unique().tolist()
+    days.sort()
+    return days
+
+
+def _calc_sharpe(ret: pd.Series) -> float:
+    s = pd.to_numeric(ret, errors="coerce").dropna()
+    if s.empty:
+        return 0.0
+    vol = float(s.std(ddof=0))
+    if vol == 0:
+        return 0.0
+    return float((float(s.mean()) / vol) * math.sqrt(252.0))
+
+
+def _calc_vol(ret: pd.Series) -> float:
+    s = pd.to_numeric(ret, errors="coerce").dropna()
+    if s.empty:
+        return 0.0
+    return float(float(s.std(ddof=0)) * math.sqrt(252.0))
+
+
+def _normalize_weights(w: pd.Series) -> pd.Series:
+    s = pd.to_numeric(w, errors="coerce").fillna(0.0).clip(lower=0.0)
+    total = float(s.sum())
+    if total > 0:
+        return s / total
+    if len(s) == 0:
+        return s
+    return pd.Series([1.0 / len(s)] * len(s), index=s.index, dtype=float)
+
+
+def _build_perf_summary(*, ods_root: str | Path, day: str | None, lookback: int | None) -> dict:
+    live_cfg = _load_live_cfg()
+    label_cfg = _load_model_label_cfg(live_cfg)
+    buy_col = str(
+        label_cfg.get("buy_twap_col", live_cfg.get("buy_twap_col", "twap_0945_1000"))
+    )
+    sell_col = str(
+        label_cfg.get("sell_twap_col", live_cfg.get("sell_twap_col", "twap_1430_1442"))
+    )
+    twap_bps = float(label_cfg.get("twap_bps", live_cfg.get("twap_bps", 1.5)))
+    fee_bps = float(label_cfg.get("fee_bps", live_cfg.get("fee_bps", 0.7)))
+    cost_bps = twap_bps + fee_bps
+    min_amount = float(live_cfg.get("min_amount", 0))
+    min_volume = float(live_cfg.get("min_volume", 0))
+    default_lb = int(live_cfg.get("perf_lookback_days", 20))
+    lookback = max(1, int(lookback if lookback is not None else default_lb))
+
+    asof_day = _parse_day_to_date(day)
+    open_days = _load_open_days(ods_root)
+    if not open_days:
+        return {
+            "asof_day": f"{asof_day:%Y-%m-%d}",
+            "lookback": lookback,
+            "count_days": 0,
+            "metrics": {},
+            "series": [],
+        }
+    next_day_map = {open_days[i]: open_days[i + 1] for i in range(len(open_days) - 1)}
+
+    live_root = _results_live_root()
+    candidates: list[date] = []
+    if live_root.exists():
+        for item in live_root.iterdir():
+            if not item.is_dir():
+                continue
+            try:
+                d = datetime.strptime(item.name, "%Y-%m-%d").date()
+            except ValueError:
+                continue
+            if d <= asof_day:
+                candidates.append(d)
+    candidates = sorted(candidates)[-lookback:]
+
+    rows: list[dict] = []
+    for trade_day in candidates:
+        next_day = next_day_map.get(trade_day)
+        if next_day is None:
+            continue
+
+        picks = _read_trade_list(trade_day)
+        if picks.empty:
+            continue
+
+        buy_df = _read_twap_daily(ods_root, trade_day)
+        sell_df = _read_twap_daily(ods_root, next_day)
+        if buy_df.empty or sell_df.empty:
+            continue
+
+        if buy_col not in buy_df.columns or sell_col not in sell_df.columns:
+            continue
+
+        merged = picks.merge(buy_df[["code", buy_col]], on="code", how="left").merge(
+            sell_df[["code", sell_col]], on="code", how="left"
+        )
+        merged = merged[
+            merged[buy_col].notna()
+            & merged[sell_col].notna()
+            & (merged[buy_col] > 0)
+            & (merged[sell_col] > 0)
+        ]
+        if merged.empty:
+            continue
+
+        buy_px = apply_twap_bps(merged[buy_col], cost_bps, side="buy")
+        sell_px = apply_twap_bps(merged[sell_col], cost_bps, side="sell")
+        strat_ret = (sell_px - buy_px) / buy_px
+        w = _normalize_weights(merged["weight"])
+        strategy_return = float((strat_ret * w).sum())
+
+        bench = buy_df[["code", buy_col]].merge(sell_df[["code", sell_col]], on="code", how="inner")
+        bench = bench[
+            bench[buy_col].notna()
+            & bench[sell_col].notna()
+            & (bench[buy_col] > 0)
+            & (bench[sell_col] > 0)
+        ]
+        if min_amount > 0 and "amount" in buy_df.columns:
+            bench = bench.merge(buy_df[["code", "amount"]], on="code", how="left")
+            bench = bench[bench["amount"].fillna(0) >= min_amount]
+        if min_volume > 0 and "volume" in buy_df.columns:
+            if "volume" not in bench.columns:
+                bench = bench.merge(buy_df[["code", "volume"]], on="code", how="left")
+            bench = bench[bench["volume"].fillna(0) >= min_volume]
+
+        if bench.empty:
+            benchmark_return = float("nan")
+        else:
+            bench_buy = apply_twap_bps(bench[buy_col], cost_bps, side="buy")
+            bench_sell = apply_twap_bps(bench[sell_col], cost_bps, side="sell")
+            benchmark_return = float(((bench_sell - bench_buy) / bench_buy).mean())
+
+        rows.append(
+            {
+                "trade_date": trade_day,
+                "next_day": next_day,
+                "strategy_return": strategy_return,
+                "benchmark_return": benchmark_return,
+                "count": int(len(merged)),
+            }
+        )
+
+    if not rows:
+        return {
+            "asof_day": f"{asof_day:%Y-%m-%d}",
+            "lookback": lookback,
+            "count_days": 0,
+            "metrics": {},
+            "series": [],
+        }
+
+    df = pd.DataFrame(rows).sort_values("trade_date")
+    df["strategy_nav"] = (1.0 + df["strategy_return"].fillna(0.0)).cumprod()
+    df["benchmark_nav"] = (1.0 + df["benchmark_return"].fillna(0.0)).cumprod()
+
+    metrics = {
+        "sharpe": _calc_sharpe(df["strategy_return"]),
+        "volatility": _calc_vol(df["strategy_return"]),
+        "benchmark_sharpe": _calc_sharpe(df["benchmark_return"]),
+        "benchmark_volatility": _calc_vol(df["benchmark_return"]),
+    }
+
+    series = [
+        {
+            "trade_date": f"{row.trade_date:%Y-%m-%d}",
+            "next_day": f"{row.next_day:%Y-%m-%d}",
+            "strategy_return": float(row.strategy_return),
+            "benchmark_return": float(row.benchmark_return)
+            if pd.notna(row.benchmark_return)
+            else None,
+            "strategy_nav": float(row.strategy_nav),
+            "benchmark_nav": float(row.benchmark_nav),
+            "count": int(row.count),
+        }
+        for row in df.itertuples()
+    ]
+    return {
+        "asof_day": f"{asof_day:%Y-%m-%d}",
+        "lookback": lookback,
+        "count_days": int(len(series)),
+        "metrics": metrics,
+        "series": series,
+    }
+
+
 def _today_day_tag() -> str:
-    return datetime.now().strftime("%Y%m%d")
+    return datetime.now().strftime("%Y-%m-%d")
 
 
 def _stop_flag_path(day: str | None = None) -> Path:
-    tag = day or _today_day_tag()
+    tag = _to_iso_day_tag(day)
     return _results_live_root() / tag / "STOP"
 
 
 def _append_dashboard_log(action: str, message: str) -> None:
     now = datetime.now()
-    tag = now.strftime("%Y%m%d")
+    tag = now.strftime("%Y-%m-%d")
     log_dir = _results_live_root() / tag / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / f"live_scheduler_{tag}.log"
@@ -293,31 +629,64 @@ def create_app() -> Flask:
     def api_log_days():
         live_root = _results_live_root()
         if not live_root.exists():
-            return jsonify({"days": [], "current_day": datetime.now().strftime("%Y%m%d")})
+            return jsonify({"days": [], "current_day": _today_day_tag()})
         days: list[str] = []
         for item in live_root.iterdir():
             if not item.is_dir():
                 continue
-            name = item.name
-            if len(name) == 8 and name.isdigit() and (item / "logs").exists():
-                days.append(name)
+            if not (item / "logs").exists():
+                continue
+            try:
+                datetime.strptime(item.name, "%Y-%m-%d")
+            except ValueError:
+                continue
+            days.append(item.name)
         days.sort(reverse=True)
-        return jsonify({"days": days, "current_day": datetime.now().strftime("%Y%m%d")})
+        return jsonify({"days": days, "current_day": _today_day_tag()})
 
     @app.get("/api/logs")
     def api_logs():
-        day = request.args.get("day", "").strip() or None
-        if day and (len(day) != 8 or not day.isdigit()):
+        raw_day = request.args.get("day", "").strip() or None
+        try:
+            day = _to_iso_day_tag(raw_day) if raw_day else None
+        except ValueError:
+            day = raw_day
             return jsonify({"path": "", "lines": [], "day": day, "error": "invalid day"}), 400
         path, lines = _read_latest_log(day=day)
         return jsonify({"path": path, "lines": lines})
 
     @app.get("/api/holdings")
     def api_holdings():
+        raw_day = request.args.get("day", "").strip() or None
+        try:
+            day_tag = _to_iso_day_tag(raw_day) if raw_day else _today_day_tag()
+        except ValueError:
+            day_tag = raw_day
+            return jsonify({"rows": [], "day": day_tag, "error": "invalid day"}), 400
+        live_cfg = _load_live_cfg()
+        if not _should_show_holdings(day_tag, live_cfg):
+            return jsonify({"rows": [], "day": day_tag})
+        return jsonify({"rows": _read_holdings(day=day_tag), "day": day_tag})
+
+    @app.get("/api/perf_summary")
+    def api_perf_summary():
         day = request.args.get("day", "").strip() or None
-        if day and (len(day) != 8 or not day.isdigit()):
-            return jsonify({"rows": [], "day": day, "error": "invalid day"}), 400
-        return jsonify({"rows": _read_holdings(day=day)})
+        lookback_raw = request.args.get("lookback", "").strip()
+        lookback = None
+        if lookback_raw:
+            try:
+                lookback = int(lookback_raw)
+            except Exception:
+                return jsonify({"error": f"invalid lookback: {lookback_raw}"}), 400
+        try:
+            payload = _build_perf_summary(
+                ods_root=paths_cfg["ods_root"],
+                day=day,
+                lookback=lookback,
+            )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify(payload)
 
     @app.get("/api/state")
     def api_state():
@@ -476,9 +845,14 @@ def create_app() -> Flask:
 
     @app.post("/api/sync_holdings")
     def api_sync_holdings():
-        rows = _read_holdings(day=_today_day_tag())
+        day_tag = _today_day_tag()
+        live_cfg = _load_live_cfg()
+        if _should_show_holdings(day_tag, live_cfg):
+            rows = _read_holdings(day=day_tag)
+        else:
+            rows = []
         _append_dashboard_log("sync_holdings", f"rows={len(rows)}")
-        return jsonify({"ok": True, "count": len(rows)})
+        return jsonify({"ok": True, "count": len(rows), "day": day_tag})
 
     @app.post("/api/shutdown")
     def api_shutdown():

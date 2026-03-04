@@ -74,8 +74,27 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 520px;
+  min-height: 180px;
+  max-height: 320px;
   overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: #b7bec8 #eef1f5;
+}
+
+.holdings-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.holdings-list::-webkit-scrollbar-track {
+  background: #eef1f5;
+  border-radius: 8px;
+}
+
+.holdings-list::-webkit-scrollbar-thumb {
+  background: #b7bec8;
+  border-radius: 8px;
 }
 
 .holding-card {
@@ -97,4 +116,50 @@
 
 .log-day-select {
   min-width: 140px;
+}
+
+.holdings-body {
+  display: grid;
+  grid-template-rows: auto minmax(120px, 320px) minmax(220px, 300px);
+  gap: 10px;
+  height: 100%;
+  min-height: 0;
+}
+
+.holdings-card {
+  max-height: 700px;
+  overflow: hidden;
+}
+
+.perf-panel {
+  margin-top: 0 !important;
+  border-top: 1px solid #e6e6e6;
+  padding-top: 10px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.perf-lookback-input {
+  width: 86px;
+}
+
+.perf-chart-wrap {
+  position: relative;
+  height: 100%;
+  min-height: 165px;
+  border: 1px solid #e6e6e6;
+  border-radius: 8px;
+  background: #fff;
+  padding: 8px;
+}
+
+@media (max-width: 992px) {
+  .holdings-body {
+    grid-template-rows: auto minmax(110px, 260px) minmax(200px, 260px);
+  }
+
+  .perf-chart-wrap {
+    min-height: 150px;
+  }
 }

@@ -6,6 +6,13 @@ const logFollow = document.getElementById("log-follow");
 const logDaySelect = document.getElementById("log-day");
 const processList = document.getElementById("process-list");
 const processCount = document.getElementById("process-count");
+const perfLookbackInput = document.getElementById("perf-lookback");
+const perfMeta = document.getElementById("perf-meta");
+const perfMetricsCanvas = document.getElementById("perf-metrics-chart");
+const perfNavCanvas = document.getElementById("perf-nav-chart");
+
+let perfMetricsChart = null;
+let perfNavChart = null;
 
 let followLogs = true;
 function atBottom(el) {
@@ -74,6 +81,147 @@ async function refreshHoldings() {
       `;
     })
     .join("");
+}
+
+function destroyCharts() {
+  if (perfMetricsChart) {
+    perfMetricsChart.destroy();
+    perfMetricsChart = null;
+  }
+  if (perfNavChart) {
+    perfNavChart.destroy();
+    perfNavChart = null;
+  }
+}
+
+async function refreshPerformance() {
+  if (!perfLookbackInput || !perfMeta || !perfMetricsCanvas || !perfNavCanvas) {
+    return;
+  }
+  try {
+    const selectedDay = logDaySelect && logDaySelect.value ? logDaySelect.value : "";
+    let lookback = Number.parseInt(perfLookbackInput.value || "20", 10);
+    if (!Number.isFinite(lookback) || lookback <= 0) {
+      lookback = 20;
+    }
+    perfLookbackInput.value = String(lookback);
+
+    const res = await axios.get("/api/perf_summary", {
+      params: { ...(selectedDay ? { day: selectedDay } : {}), lookback },
+    });
+    const payload = res.data || {};
+    const series = payload.series || [];
+    if (!series.length) {
+      destroyCharts();
+      perfMeta.textContent = "No performance data";
+      return;
+    }
+
+    const metrics = payload.metrics || {};
+    const sharpe = Number(metrics.sharpe || 0);
+    const vol = Number(metrics.volatility || 0);
+    const benchSharpe = Number(metrics.benchmark_sharpe || 0);
+    const benchVol = Number(metrics.benchmark_volatility || 0);
+
+    const labels = series.map((x) => x.trade_date);
+    const nav = series.map((x) => Number(x.strategy_nav || 0));
+    const benchNav = series.map((x) => Number(x.benchmark_nav || 0));
+
+    perfMeta.textContent = `asof: ${payload.asof_day || "-"} | samples: ${payload.count_days || 0} | lookback: ${payload.lookback || lookback}`;
+
+    if (perfMetricsChart) {
+      perfMetricsChart.destroy();
+    }
+    perfMetricsChart = new Chart(perfMetricsCanvas.getContext("2d"), {
+      type: "bar",
+      data: {
+        labels: ["Sharpe", "Volatility"],
+        datasets: [
+          {
+            label: "Strategy",
+            data: [sharpe, vol],
+            backgroundColor: "#2b7fff",
+          },
+          {
+            label: "Benchmark",
+            data: [benchSharpe, benchVol],
+            backgroundColor: "#30a46c",
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: true, position: "bottom" },
+        },
+      },
+    });
+
+    if (perfNavChart) {
+      perfNavChart.destroy();
+    }
+    perfNavChart = new Chart(perfNavCanvas.getContext("2d"), {
+      type: "line",
+      data: {
+        labels,
+        datasets: [
+          {
+            label: "Strategy NAV",
+            data: nav,
+            borderColor: "#2b7fff",
+            backgroundColor: "rgba(43,127,255,0.12)",
+            tension: 0.25,
+            pointRadius: 2,
+            pointHoverRadius: 5,
+            borderWidth: 2,
+          },
+          {
+            label: "Benchmark NAV",
+            data: benchNav,
+            borderColor: "#30a46c",
+            backgroundColor: "rgba(48,164,108,0.10)",
+            tension: 0.25,
+            pointRadius: 2,
+            pointHoverRadius: 5,
+            borderWidth: 2,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {
+          mode: "index",
+          intersect: false,
+        },
+        plugins: {
+          legend: { display: true, position: "bottom" },
+          tooltip: {
+            enabled: true,
+            callbacks: {
+              title: (items) => {
+                if (!items || !items.length) return "";
+                return `Date: ${items[0].label}`;
+              },
+              label: (ctx) => {
+                const name = ctx.dataset?.label || "";
+                const val = Number(ctx.parsed?.y ?? NaN);
+                if (!Number.isFinite(val)) return `${name}: -`;
+                return `${name}: ${val.toFixed(6)}`;
+              },
+            },
+          },
+        },
+        scales: {
+          x: { ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8 } },
+        },
+      },
+    });
+  } catch (err) {
+    destroyCharts();
+    perfMeta.textContent = "Performance load failed";
+  }
 }
 
 async function refreshProcesses() {
@@ -236,19 +384,23 @@ async function saveConfig() {
 document.getElementById("btn-open").addEventListener("click", async () => {
   await callAction("/api/start_open");
   syncStatus.textContent = "Start Open triggered";
-  refreshLogs();
+  await refreshLogs();
+  await refreshHoldings();
+  await refreshPerformance();
 });
 
 document.getElementById("btn-restart").addEventListener("click", async () => {
   await callAction("/api/restart_scheduler");
   syncStatus.textContent = "Scheduler restarted";
-  refreshLogs();
+  await refreshLogs();
+  await refreshProcesses();
 });
 
 document.getElementById("btn-stop").addEventListener("click", async () => {
   await callAction("/api/emergency_stop");
   syncStatus.textContent = "Emergency Stop triggered";
-  refreshLogs();
+  await refreshLogs();
+  await refreshProcesses();
 });
 
 document.getElementById("btn-sync").addEventListener("click", async () => {
@@ -258,8 +410,9 @@ document.getElementById("btn-sync").addEventListener("click", async () => {
   } else {
     syncStatus.textContent = `Sync failed: ${res.error || ""}`;
   }
-  refreshHoldings();
-  refreshLogs();
+  await refreshHoldings();
+  await refreshPerformance();
+  await refreshLogs();
 });
 
 document.getElementById("btn-shutdown").addEventListener("click", async () => {
@@ -277,6 +430,20 @@ if (logDaySelect) {
   logDaySelect.addEventListener("change", async () => {
     await refreshLogs();
     await refreshHoldings();
+    await refreshPerformance();
+  });
+}
+
+const btnPerfRefresh = document.getElementById("btn-perf-refresh");
+if (btnPerfRefresh) {
+  btnPerfRefresh.addEventListener("click", async () => {
+    await refreshPerformance();
+  });
+}
+
+if (perfLookbackInput) {
+  perfLookbackInput.addEventListener("change", async () => {
+    await refreshPerformance();
   });
 }
 
@@ -285,7 +452,10 @@ async function tick() {
   await refreshHoldings();
 }
 
-loadLogDays().then(() => tick());
+loadLogDays().then(async () => {
+  await tick();
+  await refreshPerformance();
+});
 loadConfig();
 setInterval(tick, 3000);
 setInterval(loadLogDays, 30000);

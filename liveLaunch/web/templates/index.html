@@ -36,10 +36,33 @@
           </div>
         </div>
         <div class="col-md-5">
-          <div class="card shadow-sm h-100">
-            <div class="card-body">
+          <div class="card shadow-sm h-100 holdings-card">
+            <div class="card-body holdings-body">
               <h5 class="card-title">Holdings</h5>
               <div id="holdings" class="holdings-list mt-2"></div>
+              <div class="perf-panel mt-3">
+                <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+                  <h6 class="mb-0">Performance</h6>
+                  <div class="d-flex align-items-center gap-2">
+                    <label for="perf-lookback" class="small text-muted mb-0">Lookback</label>
+                    <input id="perf-lookback" class="form-control form-control-sm perf-lookback-input" type="number" min="1" step="1" value="20">
+                    <button id="btn-perf-refresh" class="btn btn-sm btn-outline-secondary">Refresh</button>
+                  </div>
+                </div>
+                <div id="perf-meta" class="small text-muted mb-2"></div>
+                <div class="row g-2">
+                  <div class="col-md-5">
+                    <div class="perf-chart-wrap">
+                      <canvas id="perf-metrics-chart"></canvas>
+                    </div>
+                  </div>
+                  <div class="col-md-7">
+                    <div class="perf-chart-wrap">
+                      <canvas id="perf-nav-chart"></canvas>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -86,6 +109,7 @@
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios@1.7.7/dist/axios.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
     <script src="/static/app.js"></script>
   </body>
 </html>
